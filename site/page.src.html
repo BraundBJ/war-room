@@ -1,0 +1,913 @@
+<title>CTESPN Dynasty War Room</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: sticky scoreboard header with team picker and tabs; each tab is one working view. */
+:root {
+  --bg: #f2f4f0; --surface: #ffffff; --ink: #16211b; --muted: #5d6a62; --line: #d8ded7;
+  --accent: #1f57c3; --accent-soft: #e3ebfb; --good: #1d7f53; --good-soft: #e1f2e8;
+  --bad: #b8432b; --bad-soft: #f8e5e0; --warn: #9a6a12; --chip: #eef1ec;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1411; --surface: #151d19; --ink: #e5ebe6; --muted: #93a099; --line: #26302b;
+  --accent: #79a2ff; --accent-soft: #1b2742; --good: #4cc08a; --good-soft: #15291f;
+  --bad: #f07b61; --bad-soft: #321b16; --warn: #e0b45a; --chip: #1c2520; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e1411; --surface: #151d19; --ink: #e5ebe6; --muted: #93a099; --line: #26302b;
+  --accent: #79a2ff; --accent-soft: #1b2742; --good: #4cc08a; --good-soft: #15291f;
+  --bad: #f07b61; --bad-soft: #321b16; --warn: #e0b45a; --chip: #1c2520; color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 14px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1180px; margin-inline: auto; }
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding-block: 12px 0; }
+.brand { font-family: var(--display); font-weight: 700; font-size: 26px; letter-spacing: .01em; text-transform: uppercase; line-height: 1; margin: 0; }
+.brand small { display: block; font-family: var(--body); font-weight: 500; font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--muted); margin-top: 4px; }
+.picker { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+select, input[type="search"] { font: inherit; font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); padding: 6px 8px; min-width: 0; }
+select:focus-visible, input:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+nav.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; margin-top: 10px; }
+nav.tabs a { font-family: var(--display); font-weight: 600; font-size: 16px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); text-decoration: none; padding: 8px 12px 9px; border-bottom: 3px solid transparent; white-space: nowrap; }
+nav.tabs a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+main { padding-block: 20px 48px; display: grid; gap: 22px; }
+section.view { display: grid; gap: 18px; }
+section.view[hidden] { display: none; }
+h2 { font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: .02em; text-transform: uppercase; margin: 0; text-wrap: balance; }
+h3 { font-family: var(--display); font-weight: 600; font-size: 17px; letter-spacing: .04em; text-transform: uppercase; margin: 0; color: var(--ink); }
+.lede { color: var(--muted); margin: 4px 0 0; max-width: 68ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; min-width: 0; display: grid; gap: 12px; align-content: start; }
+.grid2 { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+.stats { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; }
+.stat .k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.stat .v { font-family: var(--display); font-weight: 700; font-size: 30px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat .s { font-size: 12px; color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls input[type="search"] { flex: 1 1 200px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.seg button { font: inherit; font-size: 12px; font-weight: 600; border: 0; background: var(--bg); color: var(--muted); padding: 6px 10px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.tw { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.tw.tall { max-height: 70vh; overflow-y: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+th { position: sticky; top: 0; background: var(--surface); z-index: 1; text-align: right; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th button { all: unset; cursor: pointer; }
+th button:hover { color: var(--ink); }
+td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+th:first-child, td:first-child { text-align: left; }
+td.l, th.l { text-align: left; }
+.pl { font-weight: 600; }
+.pl .meta { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
+.pos { display: inline-block; min-width: 26px; text-align: center; font-size: 10px; font-weight: 600; letter-spacing: .04em; padding: 1px 4px; border-radius: 3px; background: var(--chip); color: var(--muted); margin-right: 4px; }
+.chip { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+.chip.buy { background: var(--good-soft); color: var(--good); }
+.chip.sell { background: var(--bad-soft); color: var(--bad); }
+.chip.c { background: var(--accent-soft); color: var(--accent); }
+.mut { color: var(--muted); }
+.num-good { color: var(--good); font-weight: 600; }
+.num-bad { color: var(--bad); font-weight: 600; }
+.rng { display: inline-block; vertical-align: middle; width: 90px; height: 10px; position: relative; margin-left: 8px; }
+.rng i { position: absolute; top: 4px; height: 2px; background: var(--line); border-radius: 1px; }
+.rng b { position: absolute; top: 1px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-left: -4px; }
+.more { font: inherit; font-size: 13px; font-weight: 600; color: var(--accent); background: none; border: 1px solid var(--line); border-radius: var(--r); padding: 8px 12px; cursor: pointer; justify-self: start; }
+.trade { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
+.side { display: grid; gap: 10px; align-content: start; }
+.pick-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.pick-list label { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.pick-list label:last-child { border-bottom: 0; }
+.pick-list label:has(input:checked) { background: var(--accent-soft); }
+.pick-list .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pick-list .vv { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+.verdicts { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.verdict { border: 1px solid var(--line); border-radius: var(--r); padding: 14px; background: var(--surface); display: grid; gap: 8px; }
+.verdict .big { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+.verdict .row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.verdict .row span:last-child { font-variant-numeric: tabular-nums; }
+.empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
+.log { display: grid; gap: 8px; }
+.log .t { display: grid; grid-template-columns: 64px 1fr; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.log .d { font-family: var(--display); font-weight: 600; font-size: 15px; color: var(--muted); }
+.log .sides { display: grid; gap: 4px; min-width: 0; }
+.method { max-width: 72ch; display: grid; gap: 14px; }
+.method p, .method li { margin: 0; line-height: 1.6; }
+.method ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+@media (prefers-reduced-motion: no-preference) { .verdict { transition: border-color .2s } }
+.pname { all: unset; cursor: pointer; font-weight: 600; }
+.pname:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.pname:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.inj { display: inline-block; font-size: 10px; font-weight: 600; padding: 0 4px; border-radius: 3px; margin-left: 5px; background: var(--bad-soft); color: var(--bad); vertical-align: 1px; }
+.inj.q { background: var(--chip); color: var(--warn); }
+.chip.gain { background: var(--good-soft); color: var(--good); }
+.chip.risk { background: var(--chip); color: var(--warn); }
+.chip.out { background: var(--bad-soft); color: var(--bad); }
+td.ol { white-space: normal; min-width: 150px; max-width: 260px; text-align: left; font-size: 12px; color: var(--muted); }
+dialog.pv { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); padding: 0; width: min(760px, calc(100vw - 24px)); max-height: calc(100vh - 32px); }
+dialog.pv::backdrop { background: rgba(10, 16, 13, .45); }
+.pv-in { padding: 18px; display: grid; gap: 14px; }
+.pv-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.pv-head h2 { font-size: 26px; }
+.pv-close { font: inherit; font-size: 13px; font-weight: 600; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); color: var(--ink); padding: 6px 10px; cursor: pointer; }
+.chart { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--muted); font-family: var(--body); font-size: 11px; }
+.chart .bar { fill: var(--accent); }
+.chart .bar.short { fill: var(--line); }
+.chart .bar.past { fill: var(--muted); opacity: .45; }
+.chart .line { fill: none; stroke: var(--warn); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .dot { fill: var(--warn); }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.scale { display: grid; gap: 4px; }
+.scale .lbl { display: flex; justify-content: space-between; font-size: 12px; }
+.scale .lbl span:last-child { font-variant-numeric: tabular-nums; font-weight: 600; }
+.scale .track { position: relative; height: 8px; border-radius: 4px; background: var(--chip); }
+.scale .track::after { content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 14px; background: var(--muted); }
+.scale .fill { position: absolute; top: 0; height: 8px; border-radius: 4px; }
+.overall { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 14px 16px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.overall .big { font-family: var(--display); font-weight: 700; font-size: 30px; line-height: 1; }
+.overall .what { font-family: var(--display); font-weight: 600; font-size: 20px; text-transform: uppercase; letter-spacing: .03em; }
+
+/* Draft study tab */
+.study, .tt { --pRB: #2a78d6; --pWR: #eb6834; --pTE: #1baf7a; --pQB: #eda100;
+  --tStar: #1c5cab; --tHit: #6da7ec; --tSolid: #cfcdc6; --tMiss: #f0a3a2; --tBust: #c23b3a; --seq: #2a78d6;
+  --r1: #104281; --r2: #2a78d6; --r3: #86b6ef; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .study, :root:not([data-theme="light"]) .tt { --pRB: #3987e5; --pWR: #d95926; --pTE: #199e70; --pQB: #c98500;
+  --tStar: #86b6ef; --tHit: #2f6cb8; --tSolid: #4a4a46; --tMiss: #8c3a39; --tBust: #e66767; --seq: #3987e5;
+  --r1: #b7d3f6; --r2: #5598e7; --r3: #256abf; } }
+:root[data-theme="dark"] .study, :root[data-theme="dark"] .tt { --pRB: #3987e5; --pWR: #d95926; --pTE: #199e70; --pQB: #c98500;
+  --tStar: #86b6ef; --tHit: #2f6cb8; --tSolid: #4a4a46; --tMiss: #8c3a39; --tBust: #e66767; --seq: #3987e5;
+  --r1: #b7d3f6; --r2: #5598e7; --r3: #256abf; }
+.study .cwrap { overflow-x: auto; } .study .cwrap svg { min-width: 600px; }
+.study .sec { display: grid; gap: 12px; }
+.study .sec > .hd { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 8px 16px; border-top: 2px solid var(--ink); padding-top: 10px; }
+.study .sec > .hd .num { font-family: var(--display); font-weight: 700; color: var(--muted); margin-right: 8px; }
+.study .defs { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+.study .defs b { color: var(--ink); font-weight: 600; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.study .take { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 80ch; }
+.study .take li { line-height: 1.5; }
+.study .chart .hit { fill: transparent; }
+.study .chart .hit:hover { fill: var(--ink); fill-opacity: .06; }
+.study .chart .ax { stroke: var(--muted); stroke-width: 1; }
+.study .chart .ci { stroke: var(--ink); stroke-width: 1.5; }
+.study .chart .band { fill: var(--seq); fill-opacity: .16; }
+.study .chart .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.study .chart text.lab { fill: var(--ink); font-weight: 600; }
+.study .mix { display: inline-flex; width: 96px; height: 10px; gap: 1px; vertical-align: middle; }
+.study .mix i { display: block; height: 10px; }
+.study .mix i:first-child { border-radius: 2px 0 0 2px; } .study .mix i:last-child { border-radius: 0 2px 2px 0; }
+.study td.who { white-space: normal; min-width: 220px; max-width: 360px; text-align: left; font-size: 12px; line-height: 1.6; }
+.study .who > span { white-space: nowrap; margin-right: 8px; }
+.study .who .yr { color: var(--muted); }
+.study td.heat { text-align: center; min-width: 92px; }
+.study td.heat b { display: block; font-size: 14px; }
+.study td.heat small { display: block; font-size: 11px; color: var(--muted); }
+.study td.heat.best { box-shadow: inset 0 0 0 2px var(--ink); }
+.study td.heat.thin { opacity: .55; }
+.study .ci-t { color: var(--muted); font-size: 11px; margin-left: 4px; }
+.study tr.r-split td { border-top: 2px solid var(--line); }
+.study tr.mut td { color: var(--muted); }
+.tt { position: fixed; z-index: 50; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 7px 9px; font-size: 12px; line-height: 1.45; max-width: 280px; }
+.tt .k { color: var(--muted); }
+/* explanations live in How it works only */
+.view:not(#v-method) .lede:not(.keep), .study .take { display: none; }
+.tiers td, .tiers th { white-space: nowrap; }
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="bar">
+      <h1 class="brand">CTESPN War Room<small id="asof">2026 season</small></h1>
+      <label class="picker" for="viewTeam">Viewing as <select id="viewTeam"></select></label>
+    </div>
+    <nav class="tabs" aria-label="Views">
+      <a href="#team" data-tab="team">Team</a>
+      <a href="#players" data-tab="players">Players</a>
+      <a href="#trade" data-tab="trade">Trade</a>
+      <a href="#league" data-tab="league">League</a>
+      <a href="#picks" data-tab="picks">Picks</a>
+      <a href="#study" data-tab="study">Draft study</a>
+      <a href="#signals" data-tab="signals">Signals</a>
+      <a href="#method" data-tab="method">How it works</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="view" id="v-team"></section>
+
+  <section class="view" id="v-players" hidden>
+    <div><h2>Every player</h2><p class="lede">Projections and values for every QB, RB, WR and TE with a 2026 projection. Value to the team you're viewing as is lineup points added (or lost), weighted for that team's mode.</p></div>
+    <div class="controls">
+      <input type="search" id="pSearch" placeholder="Search players" aria-label="Search players">
+      <div class="seg" id="pPos" role="group" aria-label="Position">
+        <button type="button" data-v="" aria-pressed="true">All</button><button type="button" data-v="QB" aria-pressed="false">QB</button><button type="button" data-v="RB" aria-pressed="false">RB</button><button type="button" data-v="WR" aria-pressed="false">WR</button><button type="button" data-v="TE" aria-pressed="false">TE</button>
+      </div>
+      <select id="pOwner" aria-label="Owner"></select>
+    </div>
+    <div class="tw tall"><table id="pTable"></table></div>
+    <button class="more" id="pMore" type="button">Show all players</button>
+  </section>
+
+  <section class="view" id="v-trade" hidden>
+    <div><h2>Trade calculator</h2><p class="lede">Pick two teams and the players and picks each sends. Both rosters are re-simulated week by week, so a 2-for-1 is judged by what each lineup actually scores. Picks add their value on top.</p></div>
+    <div class="trade">
+      <div class="side"><h3>Team A sends</h3><select id="tA" aria-label="Team A"></select><input type="search" id="sA" placeholder="Filter roster" aria-label="Filter Team A roster"><div class="pick-list" id="lA"></div></div>
+      <div class="side"><h3>Team B sends</h3><select id="tB" aria-label="Team B"></select><input type="search" id="sB" placeholder="Filter roster" aria-label="Filter Team B roster"><div class="pick-list" id="lB"></div></div>
+    </div>
+    <div class="verdicts" id="verdicts"></div>
+  </section>
+
+  <section class="view" id="v-league" hidden></section>
+  <section class="view" id="v-picks" hidden></section>
+  <section class="view study" id="v-study" hidden></section>
+  <section class="view" id="v-signals" hidden></section>
+
+  <section class="view" id="v-method" hidden>
+    <div class="method">
+      <h2>How it works</h2>
+      <p>Every player gets three numbers. Two are live here; the third is next.</p>
+      <ul>
+        <li><b>Actual value</b> is the statistical bet: expected points above a replacement-level starter in this league's lineup (1QB, 2RB, 2WR, 1TE, 3FLEX), over the rest of 2026 and the next three seasons, times the chance of a healthy season. It counts the whole range of outcomes, not just the average: a breakout season counts in full, while a bad one costs nothing beyond sitting on your bench. That's why young players and breakout candidates near replacement level keep real value.</li>
+        <li><b>Value to a team</b> re-simulates that team's lineup week by week with and without the player, drawing each player's season from his projected range. Empty lineup spots are filled from waivers at replacement level, so a player who wouldn't start is worth nothing to that team, and two good players are worth less than their sum if one would sit.</li>
+        <li><b>The scale</b> runs from 0 to 10,000, with the league's most valuable player at 10,000. It is linear, so a 6,000 player is worth exactly two 3,000 players to a lineup that would start both.</li>
+        <li><b>Perceived value</b>, what the market pays in real 1QB dynasty trades, is next. Then the buy and sell calls become actual minus perceived.</li>
+      </ul>
+      <h3>Contender and rebuilder</h3>
+      <p id="mWeights"></p>
+      <p>Teams are labeled by points scored so far plus projected rest-of-season lineup strength: the top six are contenders. Each team's own value uses its mode.</p>
+      <p>The two modes share one scale: the top 150 players add up to the same total in both, so a player who is worth more to rebuilders shows a bigger rebuilder number. Young stars rank high in both; older players lose most of their rebuilder value.</p>
+      <h3>Projections</h3>
+      <p>Models trained on 2012 to 2025 from the same point in the season: the weeks played so far, the previous two seasons, age, experience and draft capital. They were tested on seasons they never saw, and weak forecasts are pulled toward the average automatically. Accuracy for next season (share of variation in PPG explained):</p>
+      <div class="tw"><table id="mCv"></table></div>
+      <p>Ranges are 10th to 90th percentile outcomes. Past age 27 the models can only hold or lower a player's projection as he ages. 2030 and 2031 extend the 2029 projection with historical aging curves by position and age: how often a healthy player stays healthy, how often an injured one returns, and how PPG changes from one year to the next.</p>
+      <p><b>Age cliffs.</b> The models alone underrate how fast older players fall off, because few players reach their mid 30s and the ones who do are survivors. So every fantasy-relevant season from 1999 to 2025 is used to measure, by position, age and scoring level, how often a player still has a healthy (8+ game) season one to five years later, with retirements and releases counted as misses, and how his PPG changes. From the cliff age (RB 27, WR and TE 29, QB 32) projections are pulled down to those rates whenever the model is higher. A starting RB at 29 has about a 35% chance of a healthy season three years later; at 33, about 12%.</p>
+      <h3>Signals</h3>
+      <p>The signal compares what a player's usage this season predicts for the rest of the year (target share, carry share, snap share, volume) with what his scoring alone predicts. Usage is stable week to week and leads future points; touchdowns and efficiency mostly regress. Positive means usage is ahead of scoring.</p>
+      <h3>Partial games</h3>
+      <p>Games a player left early with an injury (his snap share fell below half his norm and he then missed the next game or was on the injury report) are dropped from his averages. They still show on his trend chart, greyed out.</p>
+      <h3>Opportunity</h3>
+      <p>Return timing comes from about 2,500 absences since 2012: how many games players listed Out with each injury type actually missed. IR means at least four games; torn ACLs and Achilles end the season. A player is gaining when a teammate at his position who held a real role is out, and at risk once that teammate is likely back.</p>
+      <h3>Picks</h3>
+      <p>Each slot's value is the average lineup value that players taken there produced in their first three seasons, scored in this league's format. Slots that rest on few distinct players, like 1.01, are pulled toward a smooth curve across all slots, so a few great or terrible classes don't set the price. Picks add their value directly in trades rather than through the lineup simulation.</p>
+      <h3>Trade scores</h3>
+      <p>Each side's score runs from −100 to +100: net value gained divided by the larger of what it sent and what it received. +100 means value back for nothing, 0 an even swap. The overall number is half the gap between the two teams' scores, each in its own mode.</p>
+      <h3>League trades</h3>
+      <p>Placeholder trades are filtered out: round trips between the same two teams within three weeks, FAAB-only swaps, startup pick swaps, and the McCarthy for Carson Beck trade.</p>
+      <p class="mut" id="mBuilt"></p>
+    </div>
+  </section>
+</main>
+
+<dialog class="pv" id="pv" aria-labelledby="pvName"><div class="pv-in" id="pvBody"></div></dialog>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(() => {
+const D = JSON.parse(document.getElementById('data').textContent);
+const P = D.players, T = D.teams, M = D.meta, K = D.picks || [];
+const pickById = new Map(K.map(k => [k.id, k]));
+const isPick = id => pickById.has(id);
+const slotLabel = k => k.season === 2027 ? `~${k.round}.${String(Math.max(1, Math.min(12, Math.round(k.exp)))).padStart(2, '0')}` : 'avg slot';
+const pickVal = (k, mode) => mode === 'contender' ? k.c : k.rb;
+const byId = new Map(P.map((p, i) => [p.id, i]));
+const teamBy = new Map(T.map(t => [t.name, t]));
+const taxi = new Set(T.flatMap(t => t.taxi));
+const WEEKS = [M.restWeeks ?? 10, 17, 17, 17, 17, 17], SIMS = 3000;
+const SLOTS = {QB: 1, RB: 2, WR: 2, TE: 1}, FLEX = 3, FLEXPOS = new Set(['RB', 'WR', 'TE']);
+const REPL = M.repl, FLEX_REPL = Math.max(REPL.RB, REPL.WR, REPL.TE);
+const HZ = [0, 1, 2, 3, 4, 5];
+const W = {contender: HZ.map(h => M.wC[h] || 0), rebuilder: HZ.map(h => M.wR[h] || 0)};
+const f0 = n => n == null ? '—' : Math.round(n).toLocaleString();
+const f1 = n => n == null ? '—' : n.toFixed(1);
+const sgv = n => n == null ? '—' : (n > 0.5 ? '+' : n < -0.5 ? '−' : '') + Math.abs(Math.round(n)).toLocaleString();
+const sg = n => n == null ? '—' : (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(1);
+const pct = n => n == null ? '—' : Math.round(n * 100) + '%';
+const ord = n => n + ((n % 100 >= 11 && n % 100 <= 13) ? 'th' : ({1: 'st', 2: 'nd', 3: 'rd'}[n % 10] || 'th'));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+let ME = M.me;
+try { ME = localStorage.getItem('wr-team') || ME; } catch (e) {}
+if (!teamBy.has(ME)) ME = M.me;
+
+// ---------- lineup simulation (mirrors the Python model) ----------
+const crcT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = s => { let c = 0xffffffff; for (let i = 0; i < s.length; i++) c = crcT[(c ^ s.charCodeAt(i)) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+const mulberry = a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const drawCache = new Map();
+function draws(id, h) {
+  const k = id + '-' + h;
+  let a = drawCache.get(k);
+  if (!a) { const r = mulberry(crc32(k)); a = new Float32Array(SIMS); for (let i = 0; i < SIMS; i++) a[i] = r(); drawCache.set(k, a); }
+  return a;
+}
+const zCache = new Map();
+function zdraws(id, h) {
+  const k = id + '-' + h + '-z';
+  let a = zCache.get(k);
+  if (!a) { const r = mulberry(crc32(k)); a = new Float32Array(SIMS); for (let i = 0; i < SIMS; i++) { const u1 = Math.max(r(), 1e-12), u2 = r(); a[i] = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2); } zCache.set(k, a); }
+  return a;
+}
+function lineupPts(ids, h) {
+  const ps = ids.filter(id => byId.has(id) && !(h === 0 && taxi.has(id))).map(id => P[byId.get(id)])
+    .filter(p => p.proj[h] != null).sort((a, b) => b.proj[h] - a.proj[h]);
+  const play = ps.map(p => Math.min(1, (p.ph[h] || 0) * (p.gm[h] || 0) / WEEKS[h]));
+  const dr = ps.map(p => draws(p.id, h));
+  const zs = ps.map(p => zdraws(p.id, h));
+  let sum = 0;
+  const n = ps.length, vals = new Float64Array(n), idx = new Int32Array(n);
+  for (let s = 0; s < SIMS; s++) {
+    let m = 0;
+    for (let i = 0; i < n; i++) {
+      if (dr[i][s] >= play[i]) continue;
+      vals[i] = Math.max(0, ps[i].proj[h] + (ps[i].sd[h] || 0) * zs[i][s]);
+      idx[m++] = i;
+    }
+    const order = Array.from(idx.subarray(0, m)).sort((x, y) => vals[y] - vals[x]);
+    let tot = 0, flex = 0;
+    const need = {QB: 1, RB: 2, WR: 2, TE: 1};
+    for (const i of order) {
+      const pos = ps[i].p, v = vals[i];
+      if (need[pos] > 0) { tot += Math.max(v, REPL[pos]); need[pos]--; }
+      else if (FLEXPOS.has(pos) && flex < FLEX) { tot += Math.max(v, FLEX_REPL); flex++; }
+    }
+    for (const k in need) tot += need[k] * REPL[k];
+    tot += (FLEX - flex) * FLEX_REPL;
+    sum += tot;
+  }
+  return sum / SIMS;
+}
+const seasonPts = ids => HZ.map(h => (W.contender[h] || W.rebuilder[h]) ? lineupPts(ids, h) * WEEKS[h] : 0);
+// lineup points -> the page's 0-10,000 value scale
+const weigh = (d, mode) => (mode === 'contender' ? M.scaleC : M.scaleR) * d.reduce((a, x, h) => a + W[mode][h] * x, 0);
+const baseCache = new Map();
+const baseOf = name => { if (!baseCache.has(name)) baseCache.set(name, seasonPts(teamBy.get(name).roster)); return baseCache.get(name); };
+
+// ---------- shared bits ----------
+const tIndex = name => T.indexOf(teamBy.get(name));
+const valTo = (name, p) => { const t = teamBy.get(name); const v = t.vals[byId.get(p.id)]; return t.mode === 'contender' ? v[0] : v[1]; };
+const ownerLabel = o => o === 'Free agent' ? 'Free agent' : o;
+const sigChip = s => s == null ? '<span class="mut">—</span>' : s >= 1 ? `<span class="chip buy">Buy ${sg(s)}</span>` : s <= -1 ? `<span class="chip sell">Sell ${sg(s)}</span>` : `<span class="mut">${sg(s)}</span>`;
+const modeChip = m => `<span class="chip ${m === 'contender' ? 'c' : ''}">${m === 'contender' ? 'Contender' : 'Rebuilder'}</span>`;
+const injTag = p => p.inj ? `<span class="inj ${p.inj.s === 'Questionable' ? 'q' : ''}" title="${esc(p.inj.b || '')}">${p.inj.s === 'Questionable' ? 'Q' : esc(p.inj.s)}</span>` : '';
+const plCell = p => `<span class="pl"><span class="pos">${p.p}</span><button type="button" class="pname" data-pid="${p.id}">${esc(p.n)}</button>${injTag(p)}<span class="meta">${esc(p.t || 'FA')} · ${p.age != null ? p.age.toFixed(0) : '—'} yrs</span></span>`;
+const OL_LABEL = {gain: 'Gaining', risk: 'Gaining, at risk', out: 'Out', q: 'Questionable'};
+const olCell = p => p.ol ? `<td class="ol"><span class="chip ${p.ol.kind}">${OL_LABEL[p.ol.kind]}</span><br>${esc(p.ol.text)}</td>` : '<td class="ol">—</td>';
+const maxC = Math.max(...P.map(p => p.ch || 0));
+const rangeBar = (v, lo, hi, max) => `<span class="rng" aria-hidden="true"><i style="left:${(lo / max) * 100}%;width:${Math.max(1, ((hi - lo) / max) * 100)}%"></i><b style="left:${(v / max) * 100}%"></b></span>`;
+
+// ---------- team picker ----------
+const vt = document.getElementById('viewTeam');
+vt.innerHTML = T.slice().sort((a, b) => a.name.localeCompare(b.name)).map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
+vt.value = ME;
+vt.addEventListener('change', () => { ME = vt.value; try { localStorage.setItem('wr-team', ME); } catch (e) {} renderAll(); });
+document.getElementById('asof').textContent = `2026 season · stats through week ${M.throughWeek} · built ${M.built}`;
+
+// ---------- team view ----------
+function renderTeam() {
+  const t = teamBy.get(ME), mode = t.mode;
+  const roster = t.roster.map(id => P[byId.get(id)]).filter(Boolean)
+    .map(p => ({p, v: valTo(ME, p)})).sort((a, b) => b.v - a.v || (b.p.c || 0) - (a.p.c || 0));
+  const filler = roster.filter(r => r.v < 100);
+  const adds = P.filter(p => p.o !== ME).map(p => ({p, v: valTo(ME, p)})).sort((a, b) => b.v - a.v).slice(0, 12);
+  const rank = T.slice().sort((a, b) => b.projRos - a.projRos).findIndex(x => x.name === ME) + 1;
+  const row = r => `<tr><td>${plCell(r.p)}</td><td>${f1(r.p.ppg)}<span class="mut"> /${r.p.g}g</span></td><td>${f1(r.p.proj[0])}</td><td><b>${f0(r.v)}</b></td><td>${f0(r.p.c)}</td><td>${f0(r.p.rb)}</td><td>${sigChip(r.p.sig)}</td>${olCell(r.p)}</tr>`;
+  document.getElementById('v-team').innerHTML = `
+    <div><h2>${esc(t.label)}</h2><p class="lede keep">${esc(t.name)} · ${modeChip(mode)} · values below use ${mode} weights</p></div>
+    <div class="stats">
+      <div class="stat"><div class="k">Record</div><div class="v">${t.w}-${t.l}</div><div class="s">${f1(t.pf)} points for</div></div>
+      <div class="stat"><div class="k">Projected rest of 2026</div><div class="v">${f0(t.projRos)}</div><div class="s">lineup points, ${ord(rank)} of 12</div></div>
+      <div class="stat"><div class="k">Players with lineup value</div><div class="v">${roster.length - filler.length}</div><div class="s">of ${roster.length} projected</div></div>
+    </div>
+    <div class="panel"><h3>Roster</h3><p class="lede">Value to you is lineup points lost if he left, ${mode}-weighted. Actual values are the same for every team.</p>
+      <div class="tw"><table><thead><tr><th>Player</th><th>2026 PPG</th><th>Rest of 2026</th><th>Value to you</th><th>Contender</th><th>Rebuilder</th><th>Signal</th><th class="l">Opportunity</th></tr></thead><tbody>${roster.map(row).join('')}</tbody></table></div></div>
+    <div class="grid2">
+      <div class="panel"><h3>Best additions for you</h3><p class="lede">Lineup points each would add to your current roster.</p>
+        <div class="tw"><table><thead><tr><th>Player</th><th class="l">Owner</th><th>Value to you</th><th>Contender</th></tr></thead><tbody>${adds.map(a => `<tr><td>${plCell(a.p)}</td><td class="l">${esc(ownerLabel(a.p.o))}${a.p.o !== 'Free agent' ? ' ' + modeChip(teamBy.get(a.p.o)?.mode) : ''}</td><td><b>${f0(a.v)}</b></td><td>${f0(a.p.c)}</td></tr>`).join('')}</tbody></table></div></div>
+      <div class="panel"><h3>Your picks</h3><p class="lede">2027 slots are projected from the standings race; later years use the average slot.</p>
+        ${t.picks.length ? `<div class="tw"><table><thead><tr><th>Pick</th><th>Slot</th><th>Contender</th><th>Rebuilder</th></tr></thead><tbody>${t.picks.map(id => pickById.get(id)).filter(Boolean).sort((a, b) => a.season - b.season || a.round - b.round).map(k => `<tr><td class="l"><b>${esc(k.n)}</b></td><td>${slotLabel(k)}</td><td>${f0(k.c)}</td><td>${f0(k.rb)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">No picks in 2027 to 2029.</p>'}</div>
+      <div class="panel"><h3>Trade filler</h3><p class="lede">Players worth under 100 to your lineup because they'd rarely start for you. Moving them costs you almost nothing; offer them to thinner teams.</p>
+        ${filler.length ? `<div class="tw"><table><thead><tr><th>Player</th><th>2026 PPG</th><th>Contender</th><th>Rebuilder</th></tr></thead><tbody>${filler.map(r => `<tr><td>${plCell(r.p)}</td><td>${f1(r.p.ppg)}</td><td>${f0(r.p.c)}</td><td>${f0(r.p.rb)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">Every projected player on this roster would start at some point.</p>'}</div>
+    </div>`;
+}
+
+// ---------- players view ----------
+let pPos = '', pSort = 'c', pDir = -1, pAll = false;
+const pOwner = document.getElementById('pOwner');
+function fillOwner() {
+  const cur = pOwner.value;
+  pOwner.innerHTML = `<option value="">All owners</option><option value="__fa">Free agents</option><option value="__notme">Not on my team</option>` +
+    T.slice().sort((a, b) => a.name.localeCompare(b.name)).map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('');
+  pOwner.value = cur;
+}
+const COLS = [
+  ['n', 'Player', p => p.n], ['o', 'Owner', p => p.o], ['ppg', '2026 PPG', p => p.ppg], ['r0', 'Rest of 2026', p => p.proj[0]],
+  ['r1', '2027 PPG', p => p.proj[1]], ['h1', 'Healthy 2027', p => p.ph[1]], ['c', 'Contender', p => p.c], ['rb', 'Rebuilder', p => p.rb],
+  ['vt', 'Value to you', p => valTo(ME, p)], ['sig', 'Signal', p => p.sig],
+  ['ol', 'Opportunity', p => p.ol ? ({gain: 4, risk: 3, q: 2, out: 1})[p.ol.kind] : null]];
+function renderPlayers() {
+  const q = document.getElementById('pSearch').value.trim().toLowerCase();
+  const own = pOwner.value;
+  let rows = P.filter(p => (!pPos || p.p === pPos) && (!q || p.n.toLowerCase().includes(q)) &&
+    (!own || (own === '__fa' ? p.o === 'Free agent' : own === '__notme' ? p.o !== ME : p.o === own)));
+  const get = COLS.find(c => c[0] === pSort)[2];
+  rows.sort((a, b) => { const x = get(a), y = get(b); if (x == null) return 1; if (y == null) return -1; return (typeof x === 'string' ? x.localeCompare(y) : x - y) * pDir; });
+  const shown = pAll ? rows : rows.slice(0, 150);
+  document.getElementById('pMore').hidden = pAll || rows.length <= 150;
+  document.getElementById('pMore').textContent = `Show all ${rows.length} players`;
+  const th = COLS.map(([k, label]) => `<th class="${k === 'n' || k === 'o' || k === 'ol' ? 'l' : ''}" aria-sort="${pSort === k ? (pDir < 0 ? 'descending' : 'ascending') : 'none'}"><button type="button" data-k="${k}">${label}${pSort === k ? (pDir < 0 ? ' ↓' : ' ↑') : ''}</button></th>`).join('');
+  document.getElementById('pTable').innerHTML = `<thead><tr>${th}</tr></thead><tbody>${shown.map(p => `<tr>
+    <td>${plCell(p)}</td><td class="l">${esc(ownerLabel(p.o))}</td><td>${f1(p.ppg)}<span class="mut"> /${p.g}g</span></td>
+    <td>${f1(p.proj[0])}</td><td title="10th to 90th percentile: ${f1(p.lo[1])} to ${f1(p.hi[1])}">${f1(p.proj[1])}</td><td>${pct(p.ph[1])}</td>
+    <td title="range ${f0(p.cl)} to ${f0(p.ch)}"><b>${f0(p.c)}</b>${rangeBar(p.c || 0, p.cl || 0, p.ch || 0, maxC)}</td><td>${f0(p.rb)}</td>
+    <td>${f0(valTo(ME, p))}</td><td>${sigChip(p.sig)}</td>${olCell(p)}</tr>`).join('')}</tbody>`;
+  document.querySelectorAll('#pTable th button').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.k; if (pSort === k) pDir = -pDir; else { pSort = k; pDir = (k === 'n' || k === 'o') ? 1 : -1; } renderPlayers(); }));
+}
+document.getElementById('pSearch').addEventListener('input', renderPlayers);
+pOwner.addEventListener('change', renderPlayers);
+document.querySelectorAll('#pPos button').forEach(b => b.addEventListener('click', () => {
+  pPos = b.dataset.v; document.querySelectorAll('#pPos button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); renderPlayers(); }));
+document.getElementById('pMore').addEventListener('click', () => { pAll = true; renderPlayers(); });
+
+// ---------- trade view ----------
+const tA = document.getElementById('tA'), tB = document.getElementById('tB');
+const pickA = new Set(), pickB = new Set();
+function teamOptions(sel, val) { sel.innerHTML = T.slice().sort((a, b) => a.name.localeCompare(b.name)).map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join(''); sel.value = val; }
+function renderList(sel, list, picks, filter) {
+  const t = teamBy.get(sel.value), q = filter.value.trim().toLowerCase();
+  const ps = t.roster.map(id => P[byId.get(id)]).filter(Boolean).filter(p => !q || p.n.toLowerCase().includes(q))
+    .sort((a, b) => (b[t.mode === 'contender' ? 'c' : 'rb'] || 0) - (a[t.mode === 'contender' ? 'c' : 'rb'] || 0));
+  const kp = t.picks.map(id => pickById.get(id)).filter(k => k && (!q || k.n.toLowerCase().includes(q) || 'pick'.includes(q)));
+  list.innerHTML = ps.map(p => `<label><input type="checkbox" value="${p.id}" ${picks.has(p.id) ? 'checked' : ''}><span class="pos">${p.p}</span><span class="nm">${esc(p.n)}</span><span class="vv">${f0(p.c)} / ${f0(p.rb)}</span></label>`).join('') +
+    kp.map(k => `<label><input type="checkbox" value="${k.id}" ${picks.has(k.id) ? 'checked' : ''}><span class="pos">PK</span><span class="nm">${esc(k.n)} <span class="mut">${slotLabel(k)}</span></span><span class="vv">${f0(k.c)} / ${f0(k.rb)}</span></label>`).join('') || '<p class="empty" style="padding:10px">No players or picks.</p>';
+  list.querySelectorAll('input').forEach(i => i.addEventListener('change', () => { i.checked ? picks.add(i.value) : picks.delete(i.value); renderVerdicts(); }));
+}
+const clampS = x => Math.max(-100, Math.min(100, x));
+function evalSide(name, out, inn) {
+  const t = teamBy.get(name), base = baseOf(name);
+  const outP = new Set([...out].filter(id => !isPick(id))), inP = [...inn].filter(id => !isPick(id));
+  const outK = [...out].filter(isPick).map(id => pickById.get(id)), inK = [...inn].filter(isPick).map(id => pickById.get(id));
+  const after = seasonPts(t.roster.filter(id => !outP.has(id)).concat(inP));
+  const without = seasonPts(t.roster.filter(id => !outP.has(id)));
+  const withIn = seasonPts(t.roster.concat(inP));
+  const d = after.map((x, h) => x - base[h]);
+  const lose = base.map((x, h) => x - without[h]), gain = withIn.map((x, h) => x - base[h]);
+  const kv = (ks, mode) => ks.reduce((a, k) => a + pickVal(k, mode), 0);
+  const score = mode => { const net = weigh(d, mode) + kv(inK, mode) - kv(outK, mode), L = weigh(lose, mode) + kv(outK, mode), G = weigh(gain, mode) + kv(inK, mode);
+    return {net, L, G, s: clampS(100 * net / Math.max(L, G, 1))}; };
+  const sc = score('contender'), sr = score('rebuilder');
+  return {t, d, c: sc.net, r: sr.net, sc: sc.s, sr: sr.s, mine: t.mode === 'contender' ? sc.net : sr.net,
+          own: t.mode === 'contender' ? sc.s : sr.s, G: t.mode === 'contender' ? sc.G : sr.G, L: t.mode === 'contender' ? sc.L : sr.L};
+}
+const scaleRow = (label, v) => {
+  const w = Math.abs(v) / 2, left = v >= 0 ? 50 : 50 - w;
+  return `<div class="scale"><div class="lbl"><span>${label}</span><span class="${v >= 10 ? 'num-good' : v <= -10 ? 'num-bad' : ''}">${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(Math.round(v))}</span></div>
+    <div class="track" role="img" aria-label="${label} ${Math.round(v)} on a scale of minus 100 to 100"><span class="fill" style="left:${left}%;width:${w}%;background:${v >= 0 ? 'var(--good)' : 'var(--bad)'}"></span></div></div>`;
+};
+function verdictCard(res, gave, got) {
+  const v = res.own;
+  return `<div class="verdict"><div class="row"><span><b>${esc(res.t.name)}</b> ${modeChip(res.t.mode)}</span></div>
+    <div class="big ${v >= 10 ? 'num-good' : v <= -10 ? 'num-bad' : ''}">${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(Math.round(v))}</div>
+    <div class="mut" style="font-size:12px">trade score for their mode, −100 to +100</div>
+    ${scaleRow('Contender scale', res.sc)}${scaleRow('Rebuilder scale', res.sr)}
+    <div class="row mut"><span>Value sent / received</span><span>${f0(res.L)} / ${f0(res.G)}</span></div>
+    <div class="row mut"><span>Net value, their mode</span><span>${sgv(res.mine)}</span></div>
+    <div class="row mut"><span>Lineup points by season</span><span></span></div>
+    <div class="row"><span>Rest of 2026</span><span>${sg(res.d[0])}</span></div>
+    <div class="row"><span>2027</span><span>${sg(res.d[1])}</span></div>
+    <div class="row"><span>2028</span><span>${sg(res.d[2])}</span></div>
+    <div class="row"><span>2029</span><span>${sg(res.d[3])}</span></div>
+    <div class="row"><span>2030</span><span>${sg(res.d[4])}</span></div>
+    <div class="row"><span>2031</span><span>${sg(res.d[5])}</span></div></div>`;
+}
+function renderVerdicts() {
+  const box = document.getElementById('verdicts');
+  if (tA.value === tB.value) { box.innerHTML = '<p class="empty">Pick two different teams.</p>'; return; }
+  if (!pickA.size && !pickB.size) { box.innerHTML = '<p class="empty">Select players on either side to see what the trade does to both lineups.</p>'; return; }
+  const a = evalSide(tA.value, pickA, pickB), b = evalSide(tB.value, pickB, pickA);
+  const overall = (a.own - b.own) / 2;
+  let what;
+  if (Math.abs(overall) < 10) what = a.own >= 10 && b.own >= 10 ? 'Both teams gain, about evenly' : 'Fair trade';
+  else { const w = overall > 0 ? a : b, l = overall > 0 ? b : a;
+    what = l.own >= 10 ? `Both gain, ${w.t.name} gains more` : `${w.t.name} wins`; }
+  box.innerHTML = `<div class="overall" style="grid-column:1/-1"><span class="what">${esc(what)}</span>
+      <span class="big ${Math.abs(overall) >= 10 ? 'num-good' : ''}">${Math.abs(overall) < 0.5 ? '0' : (overall > 0 ? '+' : '−') + Math.abs(Math.round(overall))}</span>
+      <span class="mut">Overall, −100 to +100 from ${esc(tA.value)}'s side: half the gap between the two teams' trade scores.</span></div>` +
+    verdictCard(a, pickA, pickB) + verdictCard(b, pickB, pickA);
+}
+function initTrade() {
+  teamOptions(tA, ME);
+  const other = T.find(t => t.name !== ME && t.mode !== teamBy.get(ME).mode) || T.find(t => t.name !== ME);
+  teamOptions(tB, other.name);
+  // example so the calculator opens working: your top non-QB for their best non-QB
+  const top = (name, mode) => teamBy.get(name).roster.map(id => P[byId.get(id)]).filter(p => p && p.p !== 'QB').sort((x, y) => (y[mode] || 0) - (x[mode] || 0));
+  const ex = top(ME, 'c')[2], ey = top(other.name, 'c')[1];
+  if (ex) pickA.add(ex.id); if (ey) pickB.add(ey.id);
+  const sA = document.getElementById('sA'), sB = document.getElementById('sB');
+  const rA = () => renderList(tA, document.getElementById('lA'), pickA, sA), rB = () => renderList(tB, document.getElementById('lB'), pickB, sB);
+  tA.addEventListener('change', () => { pickA.clear(); rA(); renderVerdicts(); });
+  tB.addEventListener('change', () => { pickB.clear(); rB(); renderVerdicts(); });
+  sA.addEventListener('input', rA); sB.addEventListener('input', rB);
+  rA(); rB(); renderVerdicts();
+}
+
+// ---------- league view ----------
+function renderLeague() {
+  const rows = T.map(t => {
+    const ps = t.roster.map(id => P[byId.get(id)]).filter(Boolean).sort((a, b) => (b.c || 0) - (a.c || 0));
+    const core = ps.slice(0, 9);
+    return {t, cv: ps.reduce((s, p) => s + (p.c || 0), 0), rv: ps.reduce((s, p) => s + (p.rb || 0), 0),
+      age: core.length ? core.reduce((s, p) => s + (p.age || 0), 0) / core.length : null};
+  }).sort((a, b) => b.t.projRos - a.t.projRos);
+  const log = D.trades.slice().reverse().map(tr => `<div class="t"><div class="d">${esc(tr.date)}</div><div class="sides">${tr.sides.map(s =>
+    `<div><b>${esc(s.team)}</b> gets ${[...s.players.map(p => { const q = P[byId.get(p.id)]; return esc(p.n) + (q ? ` <span class="mut">(${f0(q.c)})</span>` : ''); }), ...s.picks.map(esc)].join(', ') || '<span class="mut">nothing</span>'}</div>`).join('')}</div></div>`).join('');
+  document.getElementById('v-league').innerHTML = `
+    <div><h2>League</h2><p class="lede">Teams ranked by projected rest-of-2026 lineup points. Core age averages each roster's top nine players by contender value.</p></div>
+    <div class="tw"><table><thead><tr><th>Team</th><th>Record</th><th>Points for</th><th>Projected rest of 2026</th><th class="l">Mode</th><th>Contender value</th><th>Rebuilder value</th><th>Core age</th></tr></thead>
+    <tbody>${rows.map(r => `<tr><td><span class="pl">${esc(r.t.label)}<span class="meta">${esc(r.t.name)}</span></span></td><td>${r.t.w}-${r.t.l}</td><td>${f1(r.t.pf)}</td><td><b>${f0(r.t.projRos)}</b></td><td class="l">${modeChip(r.t.mode)}</td><td>${f0(r.cv)}</td><td>${f0(r.rv)}</td><td>${r.age ? r.age.toFixed(1) : '—'}</td></tr>`).join('')}</tbody></table></div>
+    <div class="panel"><h3>Trade log</h3><p class="lede">Genuine trades this season, newest first. Numbers in parentheses are each player's current contender value.</p><div class="log">${log}</div></div>`;
+}
+
+// ---------- picks view ----------
+function renderPicks() {
+  const byTeam = T.map(t => { const ks = t.picks.map(id => pickById.get(id)).filter(Boolean);
+    return {t, n: ks.length, c: ks.reduce((a, k) => a + k.c, 0), r: ks.reduce((a, k) => a + k.rb, 0), firsts: ks.filter(k => k.round === 1).length}; })
+    .sort((a, b) => b.r - a.r);
+  const all = K.slice().sort((a, b) => b.rb - a.rb);
+  const S = D.slots || [];
+  document.getElementById('v-picks').innerHTML = `
+    <div><h2>Rookie picks</h2><p class="lede">Values on the same 0 to 10,000 scale as players, from how players taken at each slot of a straight 3-round rookie draft actually scored in this league's format (2019 to 2023 classes). 2027 picks are valued over each team's projected draft slot; 2028 and 2029 picks over the average slot. Values count seasons through 2031, the same window as players.</p></div>
+    <div class="grid2">
+      <div class="panel"><h3>Pick capital by team</h3><div class="tw"><table><thead><tr><th>Team</th><th>Picks</th><th>Firsts</th><th>Contender</th><th>Rebuilder</th></tr></thead><tbody>${byTeam.map(r => `<tr><td><span class="pl">${esc(r.t.label)}<span class="meta">${esc(r.t.name)}</span></span></td><td>${r.n}</td><td>${r.firsts}</td><td>${f0(r.c)}</td><td><b>${f0(r.r)}</b></td></tr>`).join('')}</tbody></table></div></div>
+      <div class="panel"><h3>Value by slot, 2027 draft</h3><p class="lede">Hit rate is the share of picks at that slot who produced a starter-level season in their first three years.</p>
+        <div class="tw tall"><table><thead><tr><th>Slot</th><th>Hit rate</th><th>Star rate</th><th>Contender</th><th>Rebuilder</th></tr></thead><tbody>${S.map(r => `<tr><td><b>${r.slot}</b></td><td>${pct(r.hit)}</td><td>${pct(r.star)}</td><td>${f0(r.c27)}</td><td>${f0(r.r27)}</td></tr>`).join('')}</tbody></table></div></div>
+    </div>
+    <div class="panel"><h3>Every pick</h3><div class="tw tall"><table><thead><tr><th>Pick</th><th class="l">Original team</th><th class="l">Owner</th><th>Projected slot</th><th>Contender</th><th>Rebuilder</th></tr></thead><tbody>${all.map(k => `<tr><td class="l"><b>${k.season} ${['', '1st', '2nd', '3rd'][k.round]}</b></td><td class="l">${esc(k.orig)}</td><td class="l">${esc(k.o)}${k.o !== k.orig ? ' <span class="chip">traded</span>' : ''}</td><td>${slotLabel(k)}</td><td>${f0(k.c)}</td><td><b>${f0(k.rb)}</b></td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+// ---------- signals view ----------
+function renderSignals() {
+  const ok = P.filter(p => p.sig != null && p.g >= 4);
+  const rostered = ok.filter(p => p.o !== 'Free agent');
+  const buys = rostered.filter(p => p.proj[0] >= 8).sort((a, b) => b.sig - a.sig).slice(0, 15);
+  const sells = rostered.filter(p => p.proj[0] >= 8).sort((a, b) => a.sig - b.sig).slice(0, 15);
+  const fas = ok.filter(p => p.o === 'Free agent' && p.p !== 'QB').sort((a, b) => b.proj[0] - a.proj[0]).slice(0, 10);
+  const share = p => p.p === 'RB' ? `${pct(p.car)} car · ${pct(p.tgt)} tgt` : p.p === 'QB' ? '—' : `${pct(p.tgt)} tgt`;
+  const tbl = list => `<div class="tw"><table><thead><tr><th>Player</th><th class="l">Owner</th><th>2026 PPG</th><th>Usage</th><th>TD / game</th><th>Signal</th></tr></thead><tbody>${list.map(p => `<tr><td>${plCell(p)}</td><td class="l">${esc(ownerLabel(p.o))}</td><td>${f1(p.ppg)}</td><td>${share(p)}</td><td>${f1(p.td)}</td><td>${sigChip(p.sig)}</td></tr>`).join('')}</tbody></table></div>`;
+  const rc = P.filter(p => p.rc && p.rc.share != null && p.rc.seasonShare != null && p.p !== 'QB')
+    .map(p => ({p, d: p.rc.share - p.rc.seasonShare}));
+  const up = rc.filter(x => x.d >= 0.05).sort((a, b) => b.d - a.d).slice(0, 12);
+  const down = rc.filter(x => x.d <= -0.05).sort((a, b) => a.d - b.d).slice(0, 12);
+  const rcTbl = list => `<div class="tw"><table><thead><tr><th>Player</th><th class="l">Owner</th><th>Season share</th><th>Last 3 games</th><th>Change</th><th>Last 3 PPG</th><th class="l">Opportunity</th></tr></thead><tbody>${list.map(x => `<tr><td>${plCell(x.p)}</td><td class="l">${esc(ownerLabel(x.p.o))}</td><td>${pct(x.p.rc.seasonShare)}</td><td><b>${pct(x.p.rc.share)}</b></td><td class="${x.d > 0 ? 'num-good' : 'num-bad'}">${x.d > 0 ? '+' : '−'}${Math.round(Math.abs(x.d) * 100)} pts</td><td>${f1(x.p.rc.ppg)}</td>${olCell(x.p)}</tr>`).join('')}</tbody></table></div>`;
+  document.getElementById('v-signals').innerHTML = `
+    <div><h2>Role changes</h2><p class="lede">Share of the team's carries (RB) or targets (WR, TE) over each player's last three games against his season share. Tap a player for his week-by-week trend.</p></div>
+    <div class="grid2"><div class="panel"><h3>Roles growing</h3>${rcTbl(up)}</div><div class="panel"><h3>Roles shrinking</h3>${rcTbl(down)}</div></div>
+    <div><h2>Usage vs scoring</h2><p class="lede">Expected rest-of-season PPG from usage minus what scoring alone predicts. The typical miss is about 3.5 PPG, so read these as tiebreakers.</p></div>
+    <div class="grid2"><div class="panel"><h3>Usage ahead of scoring</h3>${tbl(buys)}</div><div class="panel"><h3>Scoring ahead of usage</h3>${tbl(sells)}</div></div>
+    <div class="panel"><h3>Best free agents</h3><p class="lede">Highest projected rest-of-2026 PPG among unrostered RB, WR and TE.</p>
+      <div class="tw"><table><thead><tr><th>Player</th><th>2026 PPG</th><th>Rest of 2026</th><th>Usage</th><th>Signal</th></tr></thead><tbody>${fas.map(p => `<tr><td>${plCell(p)}</td><td>${f1(p.ppg)}</td><td><b>${f1(p.proj[0])}</b></td><td>${share(p)}</td><td>${sigChip(p.sig)}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+// ---------- method bits ----------
+const shareTxt = w => { const tot = HZ.reduce((t, h) => t + (w[h] || 0) * (h === 0 ? 10 / 17 : 1), 0);
+  return HZ.map(h => ({h, v: (w[h] || 0) * (h === 0 ? 10 / 17 : 1) / tot})).filter(x => x.v > 0.005)
+    .map(x => `${['the rest of 2026', '2027', '2028', '2029', '2030', '2031'][x.h]} ${Math.round(x.v * 100)}%`).join(', '); };
+document.getElementById('mWeights').textContent = `Each mode spreads the same total weight across seasons, so contender and rebuilder values are directly comparable and only differ by when a player produces. Contenders: ${shareTxt(M.wC)}. Rebuilders: ${shareTxt(M.wR)}. Replacement level is ${M.repl.QB.toFixed(1)} PPG at QB, ${M.repl.RB.toFixed(1)} at RB, ${M.repl.WR.toFixed(1)} at WR and ${M.repl.TE.toFixed(1)} at TE.`;
+const cvh = ['Rest of 2026', 'Next season', 'Two seasons out', 'Three seasons out'];
+document.getElementById('mCv').innerHTML = `<thead><tr><th>Horizon</th>${['QB','RB','WR','TE'].map(p => `<th>${p}</th>`).join('')}</tr></thead><tbody>${[0,1,2,3].map(h => `<tr><td>${cvh[h]}</td>${['QB','RB','WR','TE'].map(p => { const r = M.cv.find(x => x.position === p && x.horizon === h); return `<td>${r ? r.r2_calibrated.toFixed(2) : '—'}</td>`; }).join('')}</tr>`).join('')}</tbody>`;
+document.getElementById('mBuilt').textContent = `Built ${M.built} from Sleeper and nflverse data through week ${M.throughWeek}.`;
+
+// ---------- player view ----------
+function weekChart(rows, {share = false, past = false} = {}) {
+  if (!rows.length) return '<p class="empty">No games this season.</p>';
+  const Wd = 600, Hh = 190, ml = 34, mr = share ? 38 : 10, mt = 12, mb = 24;
+  const maxW = past ? 18 : Math.max(8, ...rows.map(r => r[0]));
+  const maxY = Math.max(10, ...rows.map(r => r[1] || 0));
+  const top = Math.ceil(maxY / 10) * 10;
+  const x = w => ml + (w - 0.5) * (Wd - ml - mr) / maxW, bw = (Wd - ml - mr) / maxW * 0.62;
+  const y = v => mt + (1 - v / top) * (Hh - mt - mb);
+  const ys = v => mt + (1 - v) * (Hh - mt - mb);
+  let g = '';
+  for (let t = 0; t <= top; t += top / 4) g += `<line class="grid" x1="${ml}" x2="${Wd - mr}" y1="${y(t)}" y2="${y(t)}"/><text x="${ml - 6}" y="${y(t) + 4}" text-anchor="end">${Math.round(t)}</text>`;
+  if (share) for (const t of [0.5, 1]) g += `<text x="${Wd - mr + 6}" y="${ys(t) + 4}">${t * 100}%</text>`;
+  for (let w = 1; w <= maxW; w++) if (maxW <= 18) g += `<text x="${x(w)}" y="${Hh - 6}" text-anchor="middle">${w}</text>`;
+  const bars = rows.map(r => `<rect class="bar ${past ? 'past' : ''} ${r[4] ? 'short' : ''}" x="${x(r[0]) - bw / 2}" y="${y(Math.max(0, r[1] || 0))}" width="${bw}" height="${Math.max(0, Hh - mb - y(Math.max(0, r[1] || 0)))}" rx="2"><title>Week ${r[0]}: ${f1(r[1])} pts${r[4] ? ' (left early, injury)' : ''}${share && r[3] != null ? ', ' + pct(r[3]) + ' share' : ''}</title></rect>`).join('');
+  let line = '';
+  if (share) {
+    const pts = rows.filter(r => r[3] != null).map(r => [x(r[0]), ys(Math.min(1, r[3]))]);
+    if (pts.length) line = `<polyline class="line" points="${pts.map(p => p.join(',')).join(' ')}"/>` + pts.map(p => `<circle class="dot" cx="${p[0]}" cy="${p[1]}" r="3"/>`).join('');
+  }
+  return `<svg class="chart" viewBox="0 0 ${Wd} ${Hh}" role="img" aria-label="Weekly fantasy points${share ? ' and usage share' : ''}">${g}${bars}${line}</svg>`;
+}
+const pv = document.getElementById('pv');
+function openPlayer(id) {
+  const p = P[byId.get(id)]; if (!p) return;
+  const shareName = p.p === 'RB' ? 'carry share' : p.p === 'QB' ? '' : 'target share';
+  const hz = ['Rest of 2026', '2027', '2028', '2029', '2030', '2031'];
+  document.getElementById('pvBody').innerHTML = `
+    <div class="pv-head"><div><h2 id="pvName">${esc(p.n)}${injTag(p)}</h2><p class="lede keep">${p.p} · ${esc(p.t || 'Free agent')} · ${p.age != null ? p.age.toFixed(1) : '—'} yrs · ${esc(ownerLabel(p.o))}</p></div>
+      <button type="button" class="pv-close" id="pvClose">Close</button></div>
+    ${p.ol ? `<p><span class="chip ${p.ol.kind}">${OL_LABEL[p.ol.kind]}</span> ${esc(p.ol.text)}</p>` : ''}
+    <div class="stats">
+      <div class="stat"><div class="k">2026 PPG</div><div class="v">${f1(p.ppg)}</div><div class="s">${p.g} full games</div></div>
+      <div class="stat"><div class="k">Last 3 games</div><div class="v">${p.rc ? f1(p.rc.ppg) : '—'}</div><div class="s">${p.rc && shareName ? pct(p.rc.share) + ' ' + shareName + ' (season ' + pct(p.rc.seasonShare) + ')' : 'PPG'}</div></div>
+      <div class="stat"><div class="k">Contender value</div><div class="v">${f0(p.c)}</div><div class="s">range ${f0(p.cl)} to ${f0(p.ch)}</div></div>
+      <div class="stat"><div class="k">Rebuilder value</div><div class="v">${f0(p.rb)}</div><div class="s">to ${esc(ME)}: ${f0(valTo(ME, p))}</div></div>
+    </div>
+    <div class="panel"><h3>2026 week by week</h3>
+      <div class="legend"><span><i style="background:var(--accent)"></i>Fantasy points</span>${shareName ? `<span><i style="background:var(--warn)"></i>${shareName}</span>` : ''}<span><i style="background:var(--line)"></i>Left early with injury (not counted)</span></div>
+      ${weekChart(p.w26 || [], {share: !!shareName})}</div>
+    <div class="panel"><h3>2025 week by week</h3>${weekChart((p.w25 || []).map(r => [r[0], r[1]]), {past: true})}</div>
+    <div class="panel"><h3>Projections</h3><div class="tw"><table><thead><tr><th>Season</th><th>PPG if healthy</th><th>10th to 90th</th><th>Healthy chance</th></tr></thead>
+      <tbody>${HZ.map(h => `<tr><td>${hz[h]}</td><td><b>${f1(p.proj[h])}</b></td><td>${f1(p.lo[h])} to ${f1(p.hi[h])}</td><td>${pct(p.ph[h])}</td></tr>`).join('')}</tbody></table></div></div>`;
+  document.getElementById('pvClose').addEventListener('click', () => pv.close());
+  if (!pv.open) pv.showModal();
+}
+pv.addEventListener('click', e => { if (e.target === pv) pv.close(); });
+document.addEventListener('click', e => { const b = e.target.closest('.pname'); if (b) openPlayer(b.dataset.pid); });
+
+// ---------- draft study view ----------
+const ST = D.study;
+const STP = ['RB', 'WR', 'TE', 'QB'];
+const TIERS = ['Star', 'Hit', 'Solid', 'Miss', 'Bust'];
+const TIER_DEF = {Star: 'top 12 RB/WR, top 6 QB/TE', Hit: '13-24 RB/WR, 7-12 QB/TE', Solid: '25-36 / 13-18', Miss: '37-48 / 19-24', Bust: 'below that'};
+const slotVal = new Map((D.slots || []).map(r => [r.slot, r]));
+const trendBy = new Map((ST.trend || []).map(r => [r.pick, r]));
+const f2 = n => n == null ? '—' : n.toFixed(2);
+const sState = {round: '1', ppgYear: 0, pos: 'cmp'};
+const pc = v => v == null ? '—' : Math.round(v * 100) + '%';
+const ciTxt = a => a ? `<span class="ci-t">${Math.round(a[1] * 100)} to ${Math.round(a[2] * 100)}</span>` : '';
+const tipAttr = html => `data-tip="${esc(html)}"`;
+const tierSw = t => `<span class="sw" style="background:var(--t${t})"></span>`;
+const posSw = p => `<span class="sw" style="background:var(--p${p})"></span>`;
+const seg = (id, opts, cur) => `<div class="seg" role="group" id="${id}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${String(v) === String(cur)}">${l}</button>`).join('')}</div>`;
+const thinPos = x => !x || !x.hit || x.eff < 4;
+
+// floating tooltip shared by every study chart
+const tip = document.createElement('div'); tip.className = 'tt'; tip.hidden = true; document.body.appendChild(tip);
+document.addEventListener('pointermove', e => {
+  const t = e.target.closest && e.target.closest('[data-tip]');
+  if (!t) { tip.hidden = true; return; }
+  tip.innerHTML = t.dataset.tip; tip.hidden = false;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.max(8, Math.min(e.clientX + 14, innerWidth - w - 8)) + 'px';
+  tip.style.top = (e.clientY + 16 + h > innerHeight ? e.clientY - h - 12 : e.clientY + 16) + 'px';
+});
+
+// 100% stacked tier bars per slot, hit-rate interval drawn at the Star+Hit boundary
+function tierChart(rows) {
+  const Wd = 720, Hh = 250, ml = 36, mr = 8, mt = 10, mb = 30;
+  const n = rows.length, bw = (Wd - ml - mr) / n, x = i => ml + i * bw;
+  const y = v => mt + (1 - v) * (Hh - mt - mb);
+  let g = '';
+  for (const t of [0, .25, .5, .75, 1]) g += `<line class="grid" x1="${ml}" x2="${Wd - mr}" y1="${y(t)}" y2="${y(t)}"/><text x="${ml - 6}" y="${y(t) + 4}" text-anchor="end">${t * 100}%</text>`;
+  rows.forEach((r, i) => {
+    let acc = 0;
+    for (const t of TIERS) {
+      const v = r.tiers[t] || 0;
+      if (v > 0) {
+        const h = y(acc) - y(acc + v);
+        g += `<rect x="${x(i) + bw * .14}" y="${y(acc + v) + 1}" width="${bw * .72}" height="${Math.max(0, h - 2)}" rx="2" style="fill:var(--t${t})"/>`;
+      }
+      acc += v;
+    }
+    // stacked from the bottom: Bust is last, so draw order bottom = Star. Hit boundary = Star + Hit
+    const hb = r.hit;
+    if (hb) {
+      const cx = x(i) + bw / 2;
+      g += `<line class="ci" x1="${cx}" x2="${cx}" y1="${y(hb[1])}" y2="${y(hb[2])}"/><line class="ci" x1="${cx - 4}" x2="${cx + 4}" y1="${y(hb[0])}" y2="${y(hb[0])}"/>`;
+    }
+    const every = n > 12 ? 3 : 1;
+    if (i % every === 0 || n <= 12) g += `<text x="${x(i) + bw / 2}" y="${Hh - 12}" text-anchor="middle">${r.slot}</text>`;
+    if (n > 12 && i % 12 === 0 && i) g += `<line class="ax" x1="${x(i)}" x2="${x(i)}" y1="${mt}" y2="${Hh - mb}"/>`;
+    const tipH = `<b>${r.slot}</b> · ${r.picks.toLocaleString()} picks<br>Hit rate <b>${pc(hb[0])}</b> <span class="k">(${pc(hb[1])} to ${pc(hb[2])})</span><br>` +
+      TIERS.map(t => `${tierSw(t)}${t} ${pc(r.tiers[t])}`).join('<br>');
+    g += `<rect class="hit" x="${x(i)}" y="${mt}" width="${bw}" height="${Hh - mt - mb}" ${tipAttr(tipH)}/>`;
+  });
+  return `<div class="cwrap"><svg class="chart" viewBox="0 0 ${Wd} ${Hh}" role="img" aria-label="Outcome tiers by draft slot">${g}</svg></div>`;
+}
+
+// line with a +/- 1 SEM band, any series of {label, v:[mean, lo, hi, sem]}
+function bandChart(rows, {yLabel = 'PPG', color = 'var(--seq)'} = {}) {
+  const Wd = 720, Hh = 230, ml = 36, mr = 8, mt = 10, mb = 30;
+  const ok = rows.filter(r => r.v);
+  const top = Math.ceil(Math.max(...ok.map(r => r.v[0] + r.v[3])) / 4) * 4;
+  const n = rows.length, bw = (Wd - ml - mr) / n, x = i => ml + (i + .5) * bw;
+  const y = v => mt + (1 - v / top) * (Hh - mt - mb);
+  let g = '';
+  for (let t = 0; t <= top; t += top / 4) g += `<line class="grid" x1="${ml}" x2="${Wd - mr}" y1="${y(t)}" y2="${y(t)}"/><text x="${ml - 6}" y="${y(t) + 4}" text-anchor="end">${Math.round(t)}</text>`;
+  const pts = rows.map((r, i) => r.v ? [i, r.v] : null).filter(Boolean);
+  const up = pts.map(([i, v]) => `${x(i)},${y(v[0] + v[3])}`), dn = pts.map(([i, v]) => `${x(i)},${y(Math.max(0, v[0] - v[3]))}`).reverse();
+  g += `<polygon class="band" points="${up.concat(dn).join(' ')}"/>`;
+  g += `<polyline class="ln" style="stroke:${color}" points="${pts.map(([i, v]) => `${x(i)},${y(v[0])}`).join(' ')}"/>`;
+  rows.forEach((r, i) => {
+    const every = n > 12 ? 3 : 1;
+    if (i % every === 0) g += `<text x="${x(i)}" y="${Hh - 12}" text-anchor="middle">${r.label}</text>`;
+    if (n > 12 && i % 12 === 0 && i) g += `<line class="ax" x1="${ml + i * bw}" x2="${ml + i * bw}" y1="${mt}" y2="${Hh - mb}"/>`;
+    if (r.v) g += `<rect class="hit" x="${ml + i * bw}" y="${mt}" width="${bw}" height="${Hh - mt - mb}" ${tipAttr(`<b>${r.label}</b><br>${yLabel} <b>${f1(r.v[0])}</b> <span class="k">± ${f1(r.v[3])} SEM</span>${r.extra ? '<br>' + r.extra : ''}`)}/>`;
+  });
+  return `<div class="cwrap"><svg class="chart" viewBox="0 0 ${Wd} ${Hh}" role="img" aria-label="${esc(yLabel)} by draft slot">${g}</svg></div>`;
+}
+
+// PPG by career year, one line per round
+function arcChart(pos) {
+  const Wd = 420, Hh = 210, ml = 34, mr = 60, mt = 12, mb = 28;
+  const ser = ST.byRound.map(r => ({r: r.round, x: r.pos[pos]})).filter(s => s.x && s.x.ppg.some(Boolean));
+  const vals = ser.flatMap(s => s.x.ppg.filter(Boolean).map(v => v[0]));
+  if (!vals.length) return '<p class="empty">Not enough healthy seasons.</p>';
+  const top = Math.ceil(Math.max(...vals) / 4) * 4 || 4;
+  const x = k => ml + k * (Wd - ml - mr) / 2, y = v => mt + (1 - v / top) * (Hh - mt - mb);
+  let g = '';
+  for (let t = 0; t <= top; t += top / 4) g += `<line class="grid" x1="${ml}" x2="${Wd - mr}" y1="${y(t)}" y2="${y(t)}"/><text x="${ml - 6}" y="${y(t) + 4}" text-anchor="end">${Math.round(t)}</text>`;
+  [0, 1, 2].forEach(k => g += `<text x="${x(k)}" y="${Hh - 8}" text-anchor="middle">Year ${k + 1}</text>`);
+  const labs = [];
+  for (const s of ser) {
+    const p = s.x.ppg.map((v, k) => v ? [x(k), y(v[0]), v, k] : null).filter(Boolean);
+    g += `<polyline class="ln" style="stroke:var(--r${s.r})" points="${p.map(q => q[0] + ',' + q[1]).join(' ')}"/>`;
+    p.forEach(q => g += `<circle cx="${q[0]}" cy="${q[1]}" r="4" style="fill:var(--r${s.r});stroke:var(--surface);stroke-width:2"/><circle class="hit" cx="${q[0]}" cy="${q[1]}" r="12" ${tipAttr(`<b>Round ${s.r} ${pos}</b>, year ${q[3] + 1}<br>PPG <b>${f1(q[2][0])}</b> <span class="k">± ${f1(q[2][3])} SEM</span>`)}/>`);
+    const last = p[p.length - 1];
+    labs.push({x: last[0] + 10, y: last[1] + 4, t: `Round ${s.r}`});
+  }
+  labs.sort((a, b) => a.y - b.y).forEach((l, i, arr) => { if (i && l.y - arr[i - 1].y < 14) l.y = arr[i - 1].y + 14; g += `<text class="lab" x="${l.x}" y="${l.y}">${l.t}</text>`; });
+  return `<svg class="chart" viewBox="0 0 ${Wd} ${Hh}" role="img" aria-label="${pos} PPG by career year and round">${g}</svg>`;
+}
+
+// hit rate by slot range for one position, bars in the position's color with interval whiskers
+function rangeBars(pos) {
+  const Wd = 420, Hh = 210, ml = 34, mr = 8, mt = 10, mb = 40;
+  const rows = ST.ranges.map(r => ({lab: r.range, x: r.pos[pos]}));
+  const n = rows.length, bw = (Wd - ml - mr) / n, x = i => ml + i * bw, y = v => mt + (1 - v) * (Hh - mt - mb);
+  let g = '';
+  for (const t of [0, .5, 1]) g += `<line class="grid" x1="${ml}" x2="${Wd - mr}" y1="${y(t)}" y2="${y(t)}"/><text x="${ml - 6}" y="${y(t) + 4}" text-anchor="end">${t * 100}%</text>`;
+  rows.forEach((r, i) => {
+    const [a, b] = r.lab.split('-');
+    g += `<text x="${x(i) + bw / 2}" y="${Hh - 24}" text-anchor="middle">${a}</text><text x="${x(i) + bw / 2}" y="${Hh - 11}" text-anchor="middle">${b}</text>`;
+    if (!r.x || !r.x.hit) return;
+    const h = r.x.hit, cx = x(i) + bw / 2, thin = thinPos(r.x);
+    g += `<rect x="${x(i) + bw * .2}" y="${y(h[0])}" width="${bw * .6}" height="${Math.max(0, Hh - mb - y(h[0]))}" rx="3" style="fill:var(--p${pos});opacity:${thin ? .4 : 1}"/>`;
+    g += `<line class="ci" x1="${cx}" x2="${cx}" y1="${y(h[1])}" y2="${y(h[2])}"/>`;
+    g += `<rect class="hit" x="${x(i)}" y="${mt}" width="${bw}" height="${Hh - mt - mb}" ${tipAttr(`<b>${pos} at ${r.lab}</b><br>Hit rate <b>${pc(h[0])}</b> <span class="k">(${pc(h[1])} to ${pc(h[2])})</span><br>Star ${pc(r.x.star && r.x.star[0])} · Bust ${pc(r.x.bust && r.x.bust[0])}<br>${r.x.players} players · ${pc(r.x.share)} of picks here${thin ? '<br><span class="k">Few distinct players: read loosely</span>' : ''}`)}/>`;
+  });
+  return `<svg class="chart" viewBox="0 0 ${Wd} ${Hh}" role="img" aria-label="${pos} hit rate by slot range">${g}</svg>`;
+}
+
+function seatChart() {
+  const S = ST.seats, Wd = 720, Hh = 220, ml = 36, mr = 8, mt = 10, mb = 30;
+  const top = Math.ceil(Math.max(...S.map(s => s.hits_hi)) * 2) / 2;
+  const bw = (Wd - ml - mr) / S.length, x = i => ml + i * bw, y = v => mt + (1 - v / top) * (Hh - mt - mb);
+  let g = '';
+  for (let t = 0; t <= top + 1e-9; t += .5) g += `<line class="grid" x1="${ml}" x2="${Wd - mr}" y1="${y(t)}" y2="${y(t)}"/><text x="${ml - 6}" y="${y(t) + 4}" text-anchor="end">${t.toFixed(1)}</text>`;
+  S.forEach((s, i) => {
+    const cx = x(i) + bw / 2;
+    g += `<rect x="${x(i) + bw * .22}" y="${y(s.exp_hits)}" width="${bw * .56}" height="${Hh - mb - y(s.exp_hits)}" rx="3" style="fill:var(--seq)"/>`;
+    g += `<line class="ci" x1="${cx}" x2="${cx}" y1="${y(s.hits_lo)}" y2="${y(s.hits_hi)}"/>`;
+    g += `<text x="${cx}" y="${Hh - 12}" text-anchor="middle">Seat ${s.seat}</text>`;
+    g += `<rect class="hit" x="${x(i)}" y="${mt}" width="${bw}" height="${Hh - mt - mb}" ${tipAttr(`<b>Seat ${s.seat}</b> · ${s.picks}<br>Expected hits <b>${s.exp_hits.toFixed(2)}</b> <span class="k">(${s.hits_lo.toFixed(2)} to ${s.hits_hi.toFixed(2)})</span><br>Points over replacement per season ${f0(s.exp_vor)}`)}/>`;
+  });
+  return `<div class="cwrap"><svg class="chart" viewBox="0 0 ${Wd} ${Hh}" role="img" aria-label="Expected hits by draft seat">${g}</svg></div>`;
+}
+
+const mixBar = m => `<span class="mix" ${tipAttr(STP.map(p => `${posSw(p)}${p} ${pc(m[p])}`).join('<br>'))}>${STP.filter(p => m[p] > 0).map(p => `<i style="width:${m[p] * 100}%;background:var(--p${p})"></i>`).join('')}</span>`;
+const whoCell = w => w.map(x => `<span title="${esc(x.n)}: ${pc(x.share)} of picks at this slot that year">${x.tier && TIERS.includes(x.tier) ? tierSw(x.tier) : '<span class="sw" style="background:var(--line)"></span>'}<span class="yr">'${String(x.cls).slice(2)}</span> ${esc(x.n.split(' ').slice(1).join(' ') || x.n)}</span>`).join('');
+
+function studyTakeaways() {
+  const R = ST.rounds, rg = Object.fromEntries(ST.ranges.map(r => [r.range, r]));
+  const g = (lab, pos, k = 'hit') => { const x = rg[lab].pos[pos]; return x && x[k] ? x[k][0] : null; };
+  const cliff = (() => { let m = 1; for (const s of ST.slots) { m = Math.min(m, s.hit[0]); if (m < .5) return s.slot; } return '—'; })();
+  return `<ul class="take">
+    <li><b>The cliff is ${cliff}.</b> From there on, more than half of picks never produce a starter season in years 1 to 3. Hit rate by round: ${R.map(r => `round ${r.round.slice(1)} ${Math.round(r['hit_rate%'])}%`).join(', ')}.</li>
+    <li><b>Early firsts: take the RB.</b> At 1.01 to 1.03, RBs became stars ${pc(g('1.01-1.03', 'RB', 'star'))} of the time vs ${pc(g('1.01-1.03', 'WR', 'star'))} for WRs.</li>
+    <li><b>Mid firsts flip to WR.</b> At 1.04 to 1.06, WRs hit ${pc(g('1.04-1.06', 'WR'))} vs ${pc(g('1.04-1.06', 'RB'))} for RBs, though the RBs who hit were more often stars.</li>
+    <li><b>Late firsts and beyond, RBs hold up and WRs fall off.</b> At 1.10 to 1.12: RB ${pc(g('1.10-1.12', 'RB'))}, WR ${pc(g('1.10-1.12', 'WR'))}.</li>
+    <li><b>Round 2 is where TEs pay.</b> TEs at 2.01 to 2.12 hit ${pc(g('2.01-2.06', 'TE'))} and ${pc(g('2.07-2.12', 'TE'))}, the best of any position there. It rests on few players, so read it as a lean, not a rule.</li>
+    <li><b>QB hit rates barely move with slot</b> through round 2 (${pc(g('1.04-1.06', 'QB'))} at 1.04 to 1.06, ${pc(g('2.01-2.06', 'QB'))} at 2.01 to 2.06). In 1QB a starting QB adds little over replacement, so his value per pick stays low wherever he goes.</li>
+  </ul>`;
+}
+
+function compareMatrix() {
+  const rows = ST.ranges.map((r, i) => {
+    const vals = STP.map(p => r.pos[p]);
+    const ok = STP.map((p, j) => thinPos(vals[j]) ? -1 : vals[j].vor[0]);
+    const best = ok.indexOf(Math.max(...ok));
+    const cells = vals.map((x, j) => {
+      if (!x || !x.hit) return '<td class="heat mut">—</td>';
+      const h = x.hit[0], thin = thinPos(x);
+      return `<td class="heat ${j === best ? 'best' : ''} ${thin ? 'thin' : ''}" style="background:color-mix(in oklab, var(--seq) ${Math.round(h * 55)}%, var(--surface))" ${tipAttr(`<b>${STP[j]} at ${r.range}</b><br>Hit <b>${pc(h)}</b> <span class="k">(${pc(x.hit[1])} to ${pc(x.hit[2])})</span><br>Star ${pc(x.star[0])} · Bust ${pc(x.bust[0])}<br>Points over replacement / season ${f1(x.vor[0])}<br>${x.players} players · ${pc(x.share)} of picks${thin ? '<br><span class="k">Few distinct players</span>' : ''}`)}><b>${pc(h)}</b><small>${f1(x.vor[0])} pts · ${pc(x.share)} of picks</small></td>`;
+    }).join('');
+    return `<tr class="${i === 4 || i === 6 ? 'r-split' : ''}"><td><b>${r.range}</b><span class="meta mut" style="display:block;font-size:11px">all ${pc(r.all.hit[0])}</span></td>${cells}</tr>`;
+  }).join('');
+  return `<div class="tw"><table><thead><tr><th>Slots</th>${STP.map(p => `<th style="text-align:center">${posSw(p)}${p}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="lede">Each cell: hit rate (shading), points over replacement per season, and how often that position goes there. The outlined cell is the best value per pick at that range among positions with enough distinct players. Faded cells rest on fewer than four effective players.</p>`;
+}
+
+function positionDetail(pos) {
+  const BR = ST.byRound.map(r => r.pos[pos]);
+  const y1 = ST.y1.filter(r => r.pos === pos);
+  const rows = ST.ranges.map(r => { const x = r.pos[pos];
+    if (!x) return `<tr><td><b>${r.range}</b></td><td colspan="8" class="mut l">Not drafted here</td></tr>`;
+    return `<tr class="${thinPos(x) ? 'mut' : ''}"><td><b>${r.range}</b></td><td>${pc(x.share)}</td><td><b>${pc(x.hit && x.hit[0])}</b>${ciTxt(x.hit)}</td><td>${pc(x.star && x.star[0])}</td><td>${pc(x.bust && x.bust[0])}</td><td>${f1(x.vor && x.vor[0])}</td><td>${f1(x.ppg3 && x.ppg3[0])}</td><td>${x.ppg.map(v => f1(v && v[0])).join(' → ')}</td><td>${x.players}</td></tr>`; }).join('');
+  return `<div class="stats">${BR.map((x, i) => `<div class="stat"><div class="k">Round ${i + 1} ${pos} hit rate</div><div class="v">${pc(x && x.hit && x.hit[0])}</div><div class="s">${x ? `${pc(x.share)} of round ${i + 1} picks · star ${pc(x.star[0])}` : '—'}</div></div>`).join('')}</div>
+    <div class="grid2">
+      <div class="panel"><h3>Hit rate by slot range</h3><p class="lede">Bars: share of ${pos} picks with a starter season in years 1 to 3. Lines: 95% interval.</p>${rangeBars(pos)}</div>
+      <div class="panel"><h3>PPG by career year</h3><p class="lede">Healthy seasons only (8+ games). Shows when ${pos}s taken in each round pay off.</p>${arcChart(pos)}</div>
+    </div>
+    <div class="panel"><h3>${pos} by slot range</h3><div class="tw"><table><thead><tr><th>Slots</th><th>Share of picks</th><th>Hit rate (95%)</th><th>Star</th><th>Bust</th><th>Pts over repl / season</th><th>PPG yrs 1-3</th><th>PPG yr 1 → 2 → 3</th><th>Players</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+    ${y1.length ? `<div class="panel"><h3>Does a ${pos}'s rookie year tell you anything?</h3><p class="lede">Rookies taken in rounds 1 to 3, grouped by year-1 PPG (8+ games): share who then had a starter season in year 2 or 3. Year 1 never grades itself here.</p>
+      <div class="tw"><table><thead><tr><th>Rookie-year PPG</th><th>Players</th><th>Starter season in yrs 2-3</th></tr></thead><tbody>${y1.map(r => `<tr><td>${r.yr1_bin}</td><td>${r.players}</td><td><b>${Math.round(r.later_hit_pct)}%</b></td></tr>`).join('')}</tbody></table></div></div>` : ''}`;
+}
+
+function renderStudy() {
+  const el = document.getElementById('v-study'), hl = ST.headline;
+  const rSel = sState.round === 'all' ? ST.slots : ST.slots.filter(s => s.slot.startsWith(sState.round + '.'));
+  const ppgKey = sState.ppgYear;
+  const ppgRows = rSel.map(s => ({label: s.slot, v: ppgKey === 0 ? s.ppg3 : s.ppg[ppgKey - 1]}));
+  el.innerHTML = `
+    <div><h2>Rookie draft study</h2><p class="lede">What each slot of a 12-team, 1QB, full PPR, straight 3-round rookie draft has actually returned. ${hl.picks.toLocaleString()} picks from ${hl.drafts.toLocaleString()} Sleeper rookie drafts in ${hl.leagues.toLocaleString()} leagues, ${hl.classes} classes, ${hl.players} distinct players, graded on each player's best season in his first three. Intervals resample players, not leagues, since thousands of leagues taking the same rookie are one outcome.</p></div>
+    <div class="grid2">
+    <div class="panel"><h3>Criteria</h3>
+      <div class="tw"><table class="tiers"><tbody>
+        <tr><td><b>Source</b></td><td class="l">Sleeper dynasty leagues</td></tr>
+        <tr><td><b>League</b></td><td class="l">12 teams, 1QB, full PPR, no TE premium</td></tr>
+        <tr><td><b>Draft</b></td><td class="l">Rookie drafts only, straight (linear) order, rounds 1 to 3</td></tr>
+        <tr><td><b>Classes</b></td><td class="l">${hl.classes} rookies, graded on their first 3 seasons</td></tr>
+        <tr><td><b>Sample</b></td><td class="l">${hl.picks.toLocaleString()} picks · ${hl.drafts.toLocaleString()} drafts · ${hl.leagues.toLocaleString()} leagues · ${hl.players} players</td></tr>
+        <tr><td><b>Scoring</b></td><td class="l">Sleeper default PPR (INT −1, fumble lost −2)</td></tr>
+        <tr><td><b>Season counts</b></td><td class="l">8+ games played, so injuries aren't graded as busts</td></tr>
+        <tr><td><b>Grade</b></td><td class="l">Best season in years 1 to 3, by PPG rank at his position</td></tr>
+        <tr><td><b>PPG tables</b></td><td class="l">RB, WR, TE only; healthy seasons; SEM = 1 standard error</td></tr>
+        <tr><td><b>Intervals</b></td><td class="l">95%, resampling players, not leagues</td></tr>
+      </tbody></table></div></div>
+    <div class="panel"><h3>Outcome tiers</h3>
+      <div class="tw"><table class="tiers"><thead><tr><th>Tier</th><th>RB / WR finish</th><th>QB / TE finish</th><th class="l">In lineup terms</th></tr></thead><tbody>
+        <tr><td>${tierSw('Star')}<b>Star</b></td><td>1 to 12</td><td>1 to 6</td><td class="l">RB1 / WR1, elite QB or TE</td></tr>
+        <tr><td>${tierSw('Hit')}<b>Hit</b></td><td>13 to 24</td><td>7 to 12</td><td class="l">RB2 / WR2, starting QB or TE</td></tr>
+        <tr><td>${tierSw('Solid')}<b>Solid</b></td><td>25 to 36</td><td>13 to 18</td><td class="l">Flex</td></tr>
+        <tr><td>${tierSw('Miss')}<b>Miss</b></td><td>37 to 48</td><td>19 to 24</td><td class="l">Bench depth</td></tr>
+        <tr><td>${tierSw('Bust')}<b>Bust</b></td><td>49+</td><td>25+</td><td class="l">Not a fantasy starter</td></tr>
+      </tbody></table></div>
+      <div class="legend"><span>Finish = PPG rank at his position in his best season of years 1 to 3 (8+ games)</span><span>Hit rate = Star + Hit</span><span>Never played 8+ games: left out of rates</span></div></div>
+    </div>
+
+    <div class="sec"><div class="hd"><h3><span class="num">1</span>Hit rate by round</h3></div>
+      <div class="stats">${ST.rounds.map(r => `<div class="stat"><div class="k">Round ${r.round.slice(1)} hit rate</div><div class="v">${Math.round(r['hit_rate%'])}%</div><div class="s">${Math.round(r['hit_lo%'])} to ${Math.round(r['hit_hi%'])}% · star ${Math.round(r['Star%'])}% · bust ${Math.round(r['Bust%'])}%</div></div>`).join('')}
+        <div class="stat"><div class="k">1.01 vs 1.12</div><div class="v">${pc(ST.slots[0].hit[0])} / ${pc(ST.slots[11].hit[0])}</div><div class="s">hit rate at the top and bottom of round 1</div></div></div>
+      ${studyTakeaways()}</div>
+
+    <div class="sec"><div class="hd"><h3><span class="num">2</span>Slot by slot</h3>${seg('sRound', [['1', 'Round 1'], ['2', 'Round 2'], ['3', 'Round 3'], ['all', 'All 36']], sState.round)}</div>
+      <div class="panel"><h3>Outcome mix at each slot</h3><p class="lede">Each bar is every pick at that slot, split by the best season the player reached. The tick is the hit rate, with its 95% interval.</p>
+        <div class="legend">${TIERS.map(t => `<span>${tierSw(t)}${t}</span>`).join('')}</div>${tierChart(rSel)}</div>
+      <div class="panel"><div class="controls" style="justify-content:space-between"><h3>PPG by slot (RB, WR, TE)</h3>${seg('sYear', [[0, 'Years 1-3'], [1, 'Year 1'], [2, 'Year 2'], [3, 'Year 3']], ppgKey)}</div>
+        <p class="lede">Average PPG in healthy seasons of players taken at each slot, QBs left out. Band is ± 1 standard error.</p>${bandChart(ppgRows)}</div>
+      <div class="panel"><h3>Points trend and hit rate, slot by slot</h3>
+        <p class="lede">PPG is RB, WR and TE in healthy seasons (8+ games). SEM is one standard error. Trend per year is how much the same players' PPG changed per season from year 1 to 3; it is clearly different from zero only when it is more than about twice its SEM (shown bold). Hit rate includes QBs.</p>
+        <div class="tw tall"><table><thead><tr><th>Slot</th><th>Hit rate</th><th>95%</th><th>Star</th><th>Bust</th><th>3-year PPG</th><th>SEM</th><th>Year 1</th><th>SEM</th><th>Year 2</th><th>SEM</th><th>Year 3</th><th>SEM</th><th>Trend per year</th><th>SEM</th><th>Players</th></tr></thead>
+        <tbody>${rSel.map(s => { const pk = (+s.slot.split('.')[0] - 1) * 12 + +s.slot.split('.')[1]; const t = trendBy.get(pk) || {};
+          const sig = t.slope != null && t.slope_sem && Math.abs(t.slope) > 2 * t.slope_sem;
+          return `<tr class="${s.slot.endsWith('.01') && sState.round === 'all' && s.slot !== '1.01' ? 'r-split' : ''}"><td><b>${s.slot}</b></td><td><b>${pc(s.hit[0])}</b></td><td class="mut">${pc(s.hit[1])} to ${pc(s.hit[2])}</td><td>${pc(s.tiers.Star)}</td><td>${pc(s.tiers.Bust)}</td><td><b>${f2(t.ppg3)}</b></td><td class="mut">${f2(t.ppg3_sem)}</td><td>${f2(t.y1)}</td><td class="mut">${f2(t.y1_sem)}</td><td>${f2(t.y2)}</td><td class="mut">${f2(t.y2_sem)}</td><td>${f2(t.y3)}</td><td class="mut">${f2(t.y3_sem)}</td><td>${t.slope == null ? '—' : `<span class="${sig ? (t.slope > 0 ? 'num-good' : 'num-bad') : ''}">${t.slope > 0 ? '+' : t.slope < 0 ? '−' : ''}${Math.abs(t.slope).toFixed(2)}</span>`}</td><td class="mut">${f2(t.slope_sem)}</td><td>${t.slope_players ?? '—'}</td></tr>`; }).join('')}</tbody></table></div></div>
+      <div class="panel"><h3>Who goes at each slot</h3>
+        <div class="tw tall"><table><thead><tr><th>Slot</th><th class="l">Positions taken</th><th>2027 pick value C / R</th><th class="l">Most taken there, by class</th></tr></thead>
+        <tbody>${rSel.map(s => { const v = slotVal.get(s.slot); return `<tr><td><b>${s.slot}</b></td><td class="l">${mixBar(s.mix)}</td><td>${v ? `${f0(v.c27)} / ${f0(v.r27)}` : '—'}</td><td class="who">${whoCell(s.who)}</td></tr>`; }).join('')}</tbody></table></div>
+        <div class="legend"><span>Positions:</span>${STP.map(p => `<span>${posSw(p)}${p}</span>`).join('')}<span>Name dot = that player's tier</span><span>Pick value is on the War Room 0 to 10,000 scale (contender / rebuilder)</span></div></div>
+    </div>
+
+    <div class="sec"><div class="hd"><h3><span class="num">3</span>By position</h3>${seg('sPos', [['cmp', 'Compare'], ...STP.map(p => [p, p])], sState.pos)}</div>
+      ${sState.pos === 'cmp' ? `<div class="panel"><h3>Which position to take, by slot range</h3>${compareMatrix()}</div>` : positionDetail(sState.pos)}
+      <p class="lede">Tiers are set within each position by lineup spots: 24 RB and 24 WR starters but only 12 QB and 12 TE starters in this format. Compare positions on points over replacement, not hit rate alone.</p>
+    </div>
+
+    <div class="sec"><div class="hd"><h3><span class="num">4</span>Your seat in a straight draft</h3></div>
+      <div class="panel"><p class="lede">In a straight draft seat k picks k, 12+k and 24+k every round, so the order never reverses. Expected starter-level players from all three picks, with 95% intervals.</p>${seatChart()}</div></div>
+
+    <div class="sec"><div class="hd"><h3><span class="num">5</span>Checks</h3></div>
+      <div class="panel"><p class="lede">The headline holds across eras and draft types. The 2024 class only has two seasons, so its rates run lower.</p>
+        <div class="tw"><table><thead><tr><th>Round</th><th>Straight, 2017-23</th><th>Snake, 2017-23</th><th>2017-19 classes</th><th>2020-23 classes</th><th>2024 class (2 yrs)</th></tr></thead><tbody>
+        ${[1, 2, 3].map(r => { const f = (L, k = 'round') => { const x = L.find(z => z[k] === 'R' + r && (!z.era || true)); return x ? `${Math.round(x['hit_rate%'])}% <span class="ci-t">${Math.round(x['hit_lo%'])} to ${Math.round(x['hit_hi%'])}</span>` : '—'; };
+          const eraRow = e => { const x = ST.era.find(z => z.era.startsWith(e) && z.round === 'R' + r); return x ? `${Math.round(x['hit_rate%'])}% <span class="ci-t">${Math.round(x['hit_lo%'])} to ${Math.round(x['hit_hi%'])}</span>` : '—'; };
+          return `<tr><td><b>Round ${r}</b></td><td>${f(ST.rounds)}</td><td>${f(ST.snake)}</td><td>${eraRow('2017')}</td><td>${eraRow('2020')}</td><td>${f(ST.c2024)}</td></tr>`; }).join('')}</tbody></table></div>
+        <p class="lede">Coverage: ${ST.coverage.rookie_drafts_used.toLocaleString()} rookie drafts used (${ST.coverage.linear_drafts.toLocaleString()} straight, ${ST.coverage.snake_drafts.toLocaleString()} snake), ${ST.coverage.drafts_dropped_not_rookie_draft} non-rookie drafts dropped. Scoring is Sleeper default full PPR, no TE premium; a season counts with 8+ games, so injuries don't count as busts.</p></div></div>`;
+  const bind = (id, key, num) => el.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener('click', () => { sState[key] = num ? +b.dataset.v : b.dataset.v; renderStudy(); }));
+  bind('sRound', 'round'); bind('sYear', 'ppgYear', true); bind('sPos', 'pos');
+}
+
+// ---------- routing ----------
+const TABS = ['team', 'players', 'trade', 'league', 'picks', 'study', 'signals', 'method'];
+let tradeReady = false;
+function show() {
+  const tab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'team';
+  TABS.forEach(t => { document.getElementById('v-' + t).hidden = t !== tab; });
+  document.querySelectorAll('nav.tabs a').forEach(a => { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  if (tab === 'trade' && !tradeReady) { tradeReady = true; initTrade(); }
+}
+function renderAll() { fillOwner(); renderTeam(); renderPlayers(); renderLeague(); renderPicks(); renderSignals(); if (tradeReady) { teamOptions(tA, tA.value); } }
+window.addEventListener('hashchange', show);
+renderAll(); renderStudy(); show();
+})();
+</script>
