@@ -3,6 +3,9 @@ name: Weekly War Room update
 on:
   schedule:
     - cron: "17 14 * * 2"   # every Tuesday 14:17 UTC (10:17 am Eastern during the season)
+  push:                      # rebuild when the code changes
+    branches: [main]
+    paths: ["pipeline/**", "site/**", "data/**", "run.sh", "requirements.txt", ".github/workflows/**"]
   workflow_dispatch:         # "Run workflow" button on the Actions tab
     inputs:
       week:
