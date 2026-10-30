@@ -195,6 +195,7 @@ dialog.pv::backdrop { background: rgba(10, 16, 13, .45); }
 .tname { all: unset; cursor: pointer; font-weight: 600; } .tname:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .tname.sm { font-weight: 400; } td .meta { display: block; font-size: 11px; color: var(--muted); }
 .teamhead { display: flex; justify-content: space-between; align-items: start; gap: 12px; flex-wrap: wrap; }
+.fl input.num { width: 84px; font: inherit; font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); padding: 5px 7px; }
 .fl { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 td.wrapc { white-space: normal; min-width: 160px; }
 .rk { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -280,6 +281,7 @@ header.top.collapsed nav.tabs { margin-top: 2px; }
         <label class="fl">Market fairness <select id="fFair"><option value="exact">Dead even (±3%)</option><option value="even" selected>About even</option><option value="over">I can overpay a bit</option><option value="under">Lean my way</option></select></label>
         <label class="fl"><input type="checkbox" id="fPicks" checked> Include my picks</label>
         <button type="button" class="more" id="fGo">Find trades</button>
+        <label class="fl">Your gain from <input type="number" id="fGmin" class="num" placeholder="any" step="250" aria-label="Minimum gain"> to <input type="number" id="fGmax" class="num" placeholder="any" step="250" aria-label="Maximum gain"></label>
       </div>
       <div id="fOut"></div></div>
     <h3 id="calc">Trade calculator</h3>
@@ -986,12 +988,12 @@ async function findTrades() {
     for (const t of others) {
       const targets = t.roster.map(id => P[byId.get(id)]).filter(p => p && p.mv > 0 && POSF(want, p))
         .map(p => ({p, gain: valToM(ME, p, goal) || 0})).filter(x => x.gain > 200)
-        .sort((a, b) => (b.gain - b.p.mv * 0.3) - (a.gain - a.p.mv * 0.3)).slice(0, 12);
+        .sort((a, b) => (b.gain - b.p.mv * 0.3) - (a.gain - a.p.mv * 0.3)).slice(0, 20);
       for (const x of targets) {
         const tv = x.p.mv;
         // packages whose market value lands in [lo, hi] x the target's: start from each of my top assets, add the
         // cheapest-to-me pieces until it's enough, then drop pieces it doesn't need
-        for (let s0 = 0; s0 < Math.min(10, myAssets.length); s0++) {
+        for (let s0 = 0; s0 < Math.min(14, myAssets.length); s0++) {
           if (mv(myAssets[s0]) > tv * hi) continue;
           const pkg = [myAssets[s0]]; let m = mv(myAssets[s0]);
           for (let j = 0; j < myAssets.length && m < tv * lo && pkg.length < maxSend; j++) {
@@ -1009,11 +1011,10 @@ async function findTrades() {
     }
     cands.sort((a, b) => b.est - a.est);
     const per = new Map(), short = [];
-    for (const c of cands) { const k = c.x.p.id; if ((per.get(k) || 0) >= 3) continue; per.set(k, (per.get(k) || 0) + 1); short.push(c); if (short.length >= 60) break; }
+    for (const c of cands) { const k = c.x.p.id; if ((per.get(k) || 0) >= 5) continue; per.set(k, (per.get(k) || 0) + 1); short.push(c); if (short.length >= 200) break; }
     const res = [];
     for (let i = 0; i < short.length; i++) {
-      out.innerHTML = `<p class="empty">Simulating the best deals… ${i + 1} of ${short.length}</p>`;
-      await new Promise(r => setTimeout(r, 0));
+      if (i % 5 === 0) { out.innerHTML = `<p class="empty">Simulating the best deals… ${i + 1} of ${short.length}</p>`; await new Promise(r => setTimeout(r, 0)); }
       if (L.id !== lid) return;
       const c = short[i], give = new Set(c.pkg.map(a => a.id)), get = new Set([c.x.p.id]);
       const a = evalSide(ME, give, get);
@@ -1028,9 +1029,11 @@ async function findTrades() {
 function renderFinder() {
   const out = document.getElementById('fOut');
   if (!fResults) { out.innerHTML = ''; return; }
+  const gmin = parseFloat(document.getElementById('fGmin').value), gmax = parseFloat(document.getElementById('fGmax').value);
+  const shown = fResults.list.map((r, i) => ({r, i})).filter(({r}) => (Number.isNaN(gmin) || r.mine >= gmin) && (Number.isNaN(gmax) || r.mine <= gmax));
   if (!fResults.list.length) { out.innerHTML = '<p class="empty">No market-fair deals that help you. Try another goal, position or team, a looser fairness setting, or sending more players.</p>'; return; }
   const nm = a => a.k ? `${esc(a.k.n)} <span class="mut">${f0(a.k.mv)}</span>` : `<span class="pos">${a.p.p}</span>${esc(a.p.n)} <span class="mut">${f0(a.p.mv)}</span>`;
-  out.innerHTML = `<p class="mut" style="margin:0 0 6px;font-size:12px">${fResults.list.length} deals</p><div class="tw tall"><table data-key="finder"><thead><tr><th>You get</th><th class="l">You send</th><th class="l">From</th><th>Market: get / send</th><th>Market balance</th><th>Your gain</th><th>Rest of 2026 / wk</th><th>Your score</th><th></th></tr></thead><tbody>${fResults.list.map((r, i) => {
+  out.innerHTML = `<p class="mut" style="margin:0 0 6px;font-size:12px">${shown.length} of ${fResults.list.length} deals${shown.length < fResults.list.length ? ' in that gain range' : ''}</p><div class="tw tall"><table data-key="finder"><thead><tr><th>You get</th><th class="l">You send</th><th class="l">From</th><th>Market: get / send</th><th>Market balance</th><th>Your gain</th><th>Rest of 2026 / wk</th><th>Your score</th><th></th></tr></thead><tbody>${shown.map(({r, i}) => {
     const bal = r.c.mSend / r.c.mGet - 1;
     return `<tr>
     <td data-s="${esc(r.c.x.p.n)}"><span class="pl"><span class="pos">${r.c.x.p.p}</span><button type="button" class="pname" data-pid="${r.c.x.p.id}">${esc(r.c.x.p.n)}</button><span class="meta"><span class="rk">${rankTxt(r.c.x.p)}</span> · ${esc(r.c.x.p.t || 'FA')} · ${r.c.x.p.age != null ? r.c.x.p.age.toFixed(0) : '—'} yrs</span></span></td>
@@ -1055,6 +1058,7 @@ function renderFinder() {
   }));
 }
 document.getElementById('fGo').addEventListener('click', findTrades);
+['fGmin', 'fGmax'].forEach(id => document.getElementById(id).addEventListener('input', renderFinder));
 
 // ---------- league view ----------
 function renderLeague() {
