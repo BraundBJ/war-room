@@ -277,6 +277,7 @@ header.top.collapsed nav.tabs { margin-top: 2px; }
         <label class="fl">Want <select id="fPos"><option value="">Any position</option><option>QB</option><option>RB</option><option>WR</option><option>TE</option><option value="FLEX">FLEX</option></select></label>
         <label class="fl">From <select id="fTeam"></select></label>
         <label class="fl">I send up to <select id="fMax"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></label>
+        <label class="fl">Market fairness <select id="fFair"><option value="even">About even</option><option value="over">I can overpay a bit</option><option value="under">Lean my way</option></select></label>
         <label class="fl"><input type="checkbox" id="fPicks" checked> Include my picks</label>
         <button type="button" class="more" id="fGo">Find trades</button>
       </div>
@@ -970,50 +971,54 @@ async function findTrades() {
   const goal = document.getElementById('fGoal').value === 'mine' ? me.mode : document.getElementById('fGoal').value;
   const want = document.getElementById('fPos').value, partner = document.getElementById('fTeam').value;
   const maxSend = +document.getElementById('fMax').value, usePicks = document.getElementById('fPicks').checked;
+  const [lo, hi] = ({even: [0.95, 1.08], over: [0.95, 1.2], under: [0.85, 1.05]})[document.getElementById('fFair').value];
   const others = L.teams.filter(t => t.name !== ME && (!partner || t.name === partner));
+  const mv = a => a.k ? a.k.mv : a.p.mv;
   try {
-    out.innerHTML = '<p class="empty">Working out what every player is worth to each team…</p>';
-    await ensureVals(ME, true);
-    for (const t of others) { await ensureVals(t.name, true); if (L.id !== lid) return; }
-    const myAssets = me.roster.map(id => P[byId.get(id)]).filter(Boolean).map(p => ({id: p.id, p, cost: Math.max(0, valToM(ME, p, goal) || 0)}))
-      .concat(usePicks ? me.picks.map(id => L.pickById.get(id)).filter(Boolean).map(k => ({id: k.id, k, cost: pickVal(k, goal)})) : []);
+    if (!L.market || !Object.keys(L.market).length) { out.innerHTML = '<p class="empty">Market values haven\'t loaded yet; try again in a moment.</p>'; return; }
+    out.innerHTML = '<p class="empty">Working out what every player is worth to you…</p>';
+    await ensureVals(ME, true); if (L.id !== lid) return;
+    // what I can send: anything the market prices, cheapest to my lineup per market dollar first
+    const myAssets = me.roster.map(id => P[byId.get(id)]).filter(p => p && p.mv > 0).map(p => ({id: p.id, p, cost: Math.max(0, valToM(ME, p, goal) || 0)}))
+      .concat(usePicks ? me.picks.map(id => L.pickById.get(id)).filter(k => k && k.mv > 0).map(k => ({id: k.id, k, cost: pickVal(k, goal)})) : [])
+      .sort((a, b) => mv(b) / (b.cost + 150) - mv(a) / (a.cost + 150));
     const cands = [], seen = new Set();
     for (const t of others) {
-      const theirGain = a => a.k ? pickVal(a.k, t.mode) : Math.max(0, valToM(t.name, a.p, t.mode) || 0);
-      const pool = myAssets.map(a => ({a, g: theirGain(a)})).filter(z => z.g > 40)
-        .sort((u, v) => v.g / (u.a.cost + 150) - u.g / (v.a.cost + 150));
-      const targets = t.roster.map(id => P[byId.get(id)]).filter(p => p && POSF(want, p))
-        .map(p => ({p, gain: valToM(ME, p, goal) || 0, tc: Math.max(0, valToM(t.name, p, t.mode) || 0)}))
-        .filter(x => x.gain > 200).sort((a, b) => b.gain - a.gain).slice(0, 10);
+      const targets = t.roster.map(id => P[byId.get(id)]).filter(p => p && p.mv > 0 && POSF(want, p))
+        .map(p => ({p, gain: valToM(ME, p, goal) || 0})).filter(x => x.gain > 200)
+        .sort((a, b) => (b.gain - b.p.mv * 0.3) - (a.gain - a.p.mv * 0.3)).slice(0, 12);
       for (const x of targets) {
-        const need = x.tc * 1.02 + 25;
-        for (let s0 = 0; s0 < Math.min(8, pool.length); s0++) {
-          const pkg = [pool[s0]];
-          let g = pool[s0].g;
-          for (let j = 0; j < pool.length && g < need && pkg.length < maxSend; j++) { if (j === s0) continue; pkg.push(pool[j]); g += pool[j].g; }
-          if (g < need) continue;
-          // drop pieces the deal doesn't need
-          pkg.sort((u, v) => u.g - v.g);
-          while (pkg.length > 1 && g - pkg[0].g >= need) { g -= pkg[0].g; pkg.shift(); }
-          const cost = pkg.reduce((a, z) => a + z.a.cost, 0), net = x.gain - cost;
-          const key = t.name + '|' + x.p.id + '|' + pkg.map(z => z.a.id).sort().join(',');
-          if (net > 100 && !seen.has(key)) { seen.add(key); cands.push({t, x, pkg: pkg.map(z => z.a), est: net}); }
+        const tv = x.p.mv;
+        // packages whose market value lands in [lo, hi] x the target's: start from each of my top assets, add the
+        // cheapest-to-me pieces until it's enough, then drop pieces it doesn't need
+        for (let s0 = 0; s0 < Math.min(10, myAssets.length); s0++) {
+          if (mv(myAssets[s0]) > tv * hi) continue;
+          const pkg = [myAssets[s0]]; let m = mv(myAssets[s0]);
+          for (let j = 0; j < myAssets.length && m < tv * lo && pkg.length < maxSend; j++) {
+            if (j === s0 || m + mv(myAssets[j]) > tv * hi) continue;
+            pkg.push(myAssets[j]); m += mv(myAssets[j]);
+          }
+          if (m < tv * lo || m > tv * hi) continue;
+          pkg.sort((a, b) => mv(a) - mv(b));
+          while (pkg.length > 1 && m - mv(pkg[0]) >= tv * lo) { m -= mv(pkg[0]); pkg.shift(); }
+          const cost = pkg.reduce((a, z) => a + z.cost, 0), net = x.gain - cost;
+          const key = t.name + '|' + x.p.id + '|' + pkg.map(z => z.id).sort().join(',');
+          if (net > 100 && !seen.has(key)) { seen.add(key); cands.push({t, x, pkg, est: net, mSend: m, mGet: tv}); }
         }
       }
     }
     cands.sort((a, b) => b.est - a.est);
-    // keep variety: at most 3 packages per target
     const per = new Map(), short = [];
-    for (const c of cands) { const k = c.x.p.id; if ((per.get(k) || 0) >= 3) continue; per.set(k, (per.get(k) || 0) + 1); short.push(c); if (short.length >= 28) break; }
+    for (const c of cands) { const k = c.x.p.id; if ((per.get(k) || 0) >= 2) continue; per.set(k, (per.get(k) || 0) + 1); short.push(c); if (short.length >= 24) break; }
     const res = [];
     for (let i = 0; i < short.length; i++) {
       out.innerHTML = `<p class="empty">Simulating the best deals… ${i + 1} of ${short.length}</p>`;
       await new Promise(r => setTimeout(r, 0));
       if (L.id !== lid) return;
       const c = short[i], give = new Set(c.pkg.map(a => a.id)), get = new Set([c.x.p.id]);
-      const a = evalSide(ME, give, get), b = evalSide(c.t.name, get, give);
+      const a = evalSide(ME, give, get);
       const mine = goal === 'contender' ? a.c : a.r, myScore = goal === 'contender' ? a.sc : a.sr;
-      if (mine > 0 && b.own >= -5) res.push({c, a, b, mine, myScore});
+      if (mine > 0) res.push({c, a, mine, myScore});
     }
     res.sort((u, v) => v.mine - u.mine);
     fResults = {goal, list: res.slice(0, 15)};
@@ -1023,18 +1028,21 @@ async function findTrades() {
 function renderFinder() {
   const out = document.getElementById('fOut');
   if (!fResults) { out.innerHTML = ''; return; }
-  if (!fResults.list.length) { out.innerHTML = '<p class="empty">No deals found that both sides should take. Try another goal, position or team, or allow more players.</p>'; return; }
-  const nm = a => a.k ? `${esc(a.k.n)}` : `<span class="pos">${a.p.p}</span>${esc(a.p.n)}`;
-  out.innerHTML = `<div class="tw"><table data-key="finder"><thead><tr><th>You get</th><th class="l">You send</th><th class="l">From</th><th>Your gain</th><th>Rest of 2026 / wk</th><th>Your score</th><th>Their score</th><th></th></tr></thead><tbody>${fResults.list.map((r, i) => `<tr>
+  if (!fResults.list.length) { out.innerHTML = '<p class="empty">No market-fair deals that help you. Try another goal, position or team, a looser fairness setting, or sending more players.</p>'; return; }
+  const nm = a => a.k ? `${esc(a.k.n)} <span class="mut">${f0(a.k.mv)}</span>` : `<span class="pos">${a.p.p}</span>${esc(a.p.n)} <span class="mut">${f0(a.p.mv)}</span>`;
+  out.innerHTML = `<div class="tw"><table data-key="finder"><thead><tr><th>You get</th><th class="l">You send</th><th class="l">From</th><th>Market: get / send</th><th>Market balance</th><th>Your gain</th><th>Rest of 2026 / wk</th><th>Your score</th><th></th></tr></thead><tbody>${fResults.list.map((r, i) => {
+    const bal = r.c.mSend / r.c.mGet - 1;
+    return `<tr>
     <td data-s="${esc(r.c.x.p.n)}"><span class="pl"><span class="pos">${r.c.x.p.p}</span><button type="button" class="pname" data-pid="${r.c.x.p.id}">${esc(r.c.x.p.n)}</button><span class="meta"><span class="rk">${rankTxt(r.c.x.p)}</span> · ${esc(r.c.x.p.t || 'FA')} · ${r.c.x.p.age != null ? r.c.x.p.age.toFixed(0) : '—'} yrs</span></span></td>
     <td class="l wrapc">${r.c.pkg.map(nm).join('<br>')}</td>
     <td class="l" data-s="${esc(r.c.t.name)}"><button type="button" class="tname sm" data-team="${esc(r.c.t.name)}">${esc(r.c.t.name)}</button><br>${modeChip(r.c.t.mode)}</td>
+    <td data-v="${r.c.mGet.toFixed(0)}">${f0(r.c.mGet)} / ${f0(r.c.mSend)}</td>
+    <td data-v="${bal.toFixed(3)}">${Math.abs(bal) < 0.03 ? 'Even' : bal > 0 ? `You add ${pct(bal)}` : `You save ${pct(-bal)}`}</td>
     <td data-v="${r.mine.toFixed(0)}"><b>${sgv(r.mine)}</b></td>
     <td data-v="${(r.a.d[0] / WEEKS[0]).toFixed(2)}">${sg(r.a.d[0] / WEEKS[0])}</td>
     <td data-v="${r.myScore.toFixed(0)}" class="${r.myScore >= 10 ? 'num-good' : ''}">${sgv(r.myScore)}</td>
-    <td data-v="${r.b.own.toFixed(0)}">${sgv(r.b.own)}</td>
-    <td><button type="button" class="more fLoad" data-i="${i}">Open</button></td></tr>`).join('')}</tbody></table></div>
-    <div class="legend"><span>Your gain: lineup value in your goal's mode</span><span>Scores: −100 to +100, each side in its own mode; theirs ≥ 0 means they should accept</span></div>`;
+    <td><button type="button" class="more fLoad" data-i="${i}">Open</button></td></tr>`; }).join('')}</tbody></table></div>
+    <div class="legend"><span>Deals are about even at FantasyCalc market prices, so they look fair to the other owner</span><span>Your gain: what the deal does for your lineup in your goal's mode</span></div>`;
   out.querySelectorAll('.fLoad').forEach(bt => bt.addEventListener('click', () => {
     const r = fResults.list[+bt.dataset.i];
     if (!tradeReady) initTrade();
