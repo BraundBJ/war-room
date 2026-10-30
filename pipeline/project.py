@@ -115,6 +115,7 @@ reg_kw = dict(max_iter=300, learning_rate=0.05, max_leaf_nodes=15, min_samples_l
 
 cv_rows, preds = [], []
 cur = X[X.season == CUR].copy()
+OOF_ROWS = []
 for pos in POS:
     D = X[X.pos == pos]
     out = cur[cur.pos == pos][["player_id", "name", "pos", "age", "exp", "e_games", "e_ppg", "p1_ppg"]].copy()
@@ -148,6 +149,8 @@ for pos in POS:
         slope = float(np.clip(np.cov(yv, oof)[0, 1] / np.var(oof, ddof=1), 0, 1))
         res = yv - (mu + slope * (oof - mu))
         cal_oof = mu + slope * (oof - mu)
+        OOF_ROWS.append(pd.DataFrame({"pos": pos, "h": h, "season": healthy.season.values, "player_id": healthy.player_id.values,
+                                      "y": yv.values, "oof": oof.values, "cal": cal_oof.values, "w": w[yv.index].values}))
         r2_cal = 1 - (res ** 2).sum() / ((yv - yv.mean()) ** 2).sum()
         bins = pd.qcut(cal_oof, 3, labels=False, duplicates="drop")
         lo = res.groupby(bins).quantile(0.1)
@@ -173,6 +176,7 @@ for pos in POS:
         out[f"games{h}"] = games_q
     preds.append(out)
 
+pd.concat(OOF_ROWS).to_parquet(f"{OUT}/projection_oof.parquet")
 cv = pd.DataFrame(cv_rows)
 cv.to_csv(f"{OUT}/projection_cv.csv", index=False)
 P = pd.concat(preds)
