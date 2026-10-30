@@ -137,13 +137,13 @@ dialog.pv::backdrop { background: rgba(10, 16, 13, .45); }
 
 /* Draft study tab */
 .study, .tt { --pRB: #2a78d6; --pWR: #eb6834; --pTE: #1baf7a; --pQB: #eda100;
-  --tStar: #1c5cab; --tHit: #6da7ec; --tSolid: #cfcdc6; --tMiss: #f0a3a2; --tBust: #c23b3a; --seq: #2a78d6;
+  --tStar: #1c5cab; --tHit: #6da7ec; --tSolid: #cfcdc6; --tMiss: #f0a3a2; --tBust: #c23b3a; --tDNP: #6e2a29; --seq: #2a78d6;
   --r1: #104281; --r2: #2a78d6; --r3: #86b6ef; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .study, :root:not([data-theme="light"]) .tt { --pRB: #3987e5; --pWR: #d95926; --pTE: #199e70; --pQB: #c98500;
-  --tStar: #86b6ef; --tHit: #2f6cb8; --tSolid: #4a4a46; --tMiss: #8c3a39; --tBust: #e66767; --seq: #3987e5;
+  --tStar: #86b6ef; --tHit: #2f6cb8; --tSolid: #4a4a46; --tMiss: #8c3a39; --tBust: #e66767; --tDNP: #f4b1b0; --seq: #3987e5;
   --r1: #b7d3f6; --r2: #5598e7; --r3: #256abf; } }
 :root[data-theme="dark"] .study, :root[data-theme="dark"] .tt { --pRB: #3987e5; --pWR: #d95926; --pTE: #199e70; --pQB: #c98500;
-  --tStar: #86b6ef; --tHit: #2f6cb8; --tSolid: #4a4a46; --tMiss: #8c3a39; --tBust: #e66767; --seq: #3987e5;
+  --tStar: #86b6ef; --tHit: #2f6cb8; --tSolid: #4a4a46; --tMiss: #8c3a39; --tBust: #e66767; --tDNP: #f4b1b0; --seq: #3987e5;
   --r1: #b7d3f6; --r2: #5598e7; --r3: #256abf; }
 .study .cwrap { overflow-x: auto; } .study .cwrap svg { min-width: 600px; }
 .study .sec { display: grid; gap: 12px; }
@@ -1105,8 +1105,9 @@ document.addEventListener('click', e => { const b = e.target.closest('.pname'); 
 // ---------- draft study view ----------
 const ST = D.study;
 const STP = ['RB', 'WR', 'TE', 'QB'];
-const TIERS = ['Star', 'Hit', 'Solid', 'Miss', 'Bust'];
-const TIER_DEF = {Star: 'top 12 RB/WR, top 6 QB/TE', Hit: '13-24 RB/WR, 7-12 QB/TE', Solid: '25-36 / 13-18', Miss: '37-48 / 19-24', Bust: 'below that'};
+const TIERS = ['Star', 'Hit', 'Solid', 'Miss', 'Bust', 'DNP'];
+const TIER_NAME = {DNP: 'Never 8 games'};
+const TIER_DEF = {Star: 'top 12 RB/WR, top 6 QB/TE', Hit: '13-24 RB/WR, 7-12 QB/TE', Solid: '25-36 / 13-18', Miss: '37-48 / 19-24', Bust: 'below that', DNP: 'never played 8 games in a season'};
 const studySlot = new Map((D.slots || []).map(r => [r.slot, r]));
 const trendBy = new Map((ST.trend || []).map(r => [r.pick, r]));
 const f2 = n => n == null ? '—' : n.toFixed(2);
@@ -1157,7 +1158,7 @@ function tierChart(rows) {
     if (i % every === 0 || n <= 12) g += `<text x="${x(i) + bw / 2}" y="${Hh - 12}" text-anchor="middle">${r.slot}</text>`;
     if (n > 12 && i % 12 === 0 && i) g += `<line class="ax" x1="${x(i)}" x2="${x(i)}" y1="${mt}" y2="${Hh - mb}"/>`;
     const tipH = `<b>${r.slot}</b> · ${r.picks.toLocaleString()} picks<br>Hit rate <b>${pc(hb[0])}</b> <span class="k">(${pc(hb[1])} to ${pc(hb[2])})</span><br>` +
-      TIERS.map(t => `${tierSw(t)}${t} ${pc(r.tiers[t])}`).join('<br>');
+      TIERS.map(t => `${tierSw(t)}${TIER_NAME[t] || t} ${pc(r.tiers[t])}`).join('<br>');
     g += `<rect class="hit" x="${x(i)}" y="${mt}" width="${bw}" height="${Hh - mt - mb}" ${tipAttr(tipH)}/>`;
   });
   return `<div class="cwrap"><svg class="chart" viewBox="0 0 ${Wd} ${Hh}" role="img" aria-label="Outcome tiers by draft slot">${g}</svg></div>`;
@@ -1308,17 +1309,17 @@ function renderStudy() {
         <tr><td><b>Classes</b></td><td class="l">${hl.classes} rookies, graded on their first 3 seasons</td></tr>
         <tr><td><b>Sample</b></td><td class="l">${hl.picks.toLocaleString()} picks · ${hl.drafts.toLocaleString()} drafts · ${hl.leagues.toLocaleString()} leagues · ${hl.players} players</td></tr>
         <tr><td><b>Scoring</b></td><td class="l">Sleeper default PPR (INT −1, fumble lost −2)</td></tr>
-        <tr><td><b>Season counts</b></td><td class="l">8+ games played, so injuries aren't graded as busts</td></tr>
+        <tr><td><b>Season counts</b></td><td class="l">8+ games played; a player who never gets there counts as a miss</td></tr>
         <tr><td><b>Grade</b></td><td class="l">Best season in years 1 to 3, by PPG rank at his position</td></tr>
         <tr><td><b>PPG tables</b></td><td class="l">RB, WR, TE only; healthy seasons; SEM = 1 standard error</td></tr>
         <tr><td><b>Intervals</b></td><td class="l">95%, resampling players, not leagues</td></tr>
       </tbody></table></div></div>
     <div class="panel"><h3>Outcome tiers</h3>
       <div class="tw"><table class="tiers"><thead><tr><th>Tier</th><th>RB / WR finish</th><th>QB / TE finish</th>${['RB', 'WR', 'QB', 'TE'].map(p => `<th>${p} PPG</th>`).join('')}<th class="l">In lineup terms</th></tr></thead><tbody>
-        ${[['Star', '1 to 12', '1 to 6', 'RB1 / WR1, elite QB or TE'], ['Hit', '13 to 24', '7 to 12', 'RB2 / WR2, starting QB or TE'], ['Solid', '25 to 36', '13 to 18', 'Flex'], ['Miss', '37 to 48', '19 to 24', 'Bench depth'], ['Bust', '49+', '25+', 'Not a fantasy starter']].map(([t, a, b, d], k) =>
-          `<tr><td>${tierSw(t)}<b>${t}</b></td><td>${a}</td><td>${b}</td>${['RB', 'WR', 'QB', 'TE'].map(p => { const c = (ST.cuts || {})[p]; if (!c) return '<td>—</td>'; return `<td>${k === 0 ? c[0].toFixed(1) + '+' : k === 4 ? 'under ' + c[3].toFixed(1) : c[k].toFixed(1) + ' to ' + c[k - 1].toFixed(1)}</td>`; }).join('')}<td class="l">${d}</td></tr>`).join('')}
+        ${[['Star', '1 to 12', '1 to 6', 'RB1 / WR1, elite QB or TE'], ['Hit', '13 to 24', '7 to 12', 'RB2 / WR2, starting QB or TE'], ['Solid', '25 to 36', '13 to 18', 'Flex'], ['Miss', '37 to 48', '19 to 24', 'Bench depth'], ['Bust', '49+', '25+', 'Not a fantasy starter'], ['DNP', '—', '—', 'Never played 8 games in a season; counts as a miss']].map(([t, a, b, d], k) =>
+          `<tr><td>${tierSw(t)}<b>${TIER_NAME[t] || t}</b></td><td>${a}</td><td>${b}</td>${['RB', 'WR', 'QB', 'TE'].map(p => { const c = (ST.cuts || {})[p]; if (!c || k === 5) return '<td>—</td>'; return `<td>${k === 0 ? c[0].toFixed(1) + '+' : k === 4 ? 'under ' + c[3].toFixed(1) : c[k].toFixed(1) + ' to ' + c[k - 1].toFixed(1)}</td>`; }).join('')}<td class="l">${d}</td></tr>`).join('')}
       </tbody></table></div>
-      <div class="legend"><span>Finish = PPG rank at his position in his best season of years 1 to 3 (8+ games, full PPR)</span><span>PPG = average line 2017 to 2025; it moves a little each year</span><span>Hit rate = Star + Hit</span><span>Never played 8+ games: left out of rates</span></div></div>
+      <div class="legend"><span>Finish = PPG rank at his position in his best season of years 1 to 3 (8+ games, full PPR)</span><span>PPG = average line 2017 to 2025; it moves a little each year</span><span>Hit rate = Star + Hit</span><span>Rates include every pick, so players who never played 8 games count against the slot</span></div></div>
     </div>
 
     <div class="sec"><div class="hd"><h3><span class="num">1</span>Hit rate by round</h3></div>
@@ -1328,7 +1329,7 @@ function renderStudy() {
 
     <div class="sec"><div class="hd"><h3><span class="num">2</span>Slot by slot</h3>${seg('sRound', [['1', 'Round 1'], ['2', 'Round 2'], ['3', 'Round 3'], ['all', 'All 36']], sState.round)}</div>
       <div class="panel"><h3>Outcome mix at each slot</h3><p class="lede">Each bar is every pick at that slot, split by the best season the player reached. The tick is the hit rate, with its 95% interval.</p>
-        <div class="legend">${TIERS.map(t => `<span>${tierSw(t)}${t}</span>`).join('')}</div>${tierChart(rSel)}</div>
+        <div class="legend">${TIERS.map(t => `<span>${tierSw(t)}${TIER_NAME[t] || t}</span>`).join('')}</div>${tierChart(rSel)}</div>
       <div class="panel"><div class="controls" style="justify-content:space-between"><h3>PPG by slot (RB, WR, TE)</h3>${seg('sYear', [[0, 'Years 1-3'], [1, 'Year 1'], [2, 'Year 2'], [3, 'Year 3']], ppgKey)}</div>
         <p class="lede">Average PPG in healthy seasons of players taken at each slot, QBs left out. Band is ± 1 standard error.</p>${bandChart(ppgRows)}</div>
       <div class="panel"><h3>Points trend and hit rate, slot by slot</h3>
