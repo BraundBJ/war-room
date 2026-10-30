@@ -142,7 +142,9 @@ for (y, r, orig), cur in sorted(owner.items()):
 slots = [{"pick": int(i), "slot": f"{(i - 1) // TEAMS + 1}.{(i - 1) % TEAMS + 1:02d}",
           "players": int(curve.at[i, "players"] or 0),
           "y1": float(curve.at[i, "s1"]), "y2": float(curve.at[i, "s2"]), "y3": float(curve.at[i, "s3"]),
-          "c27": slot_value(i, 2027, WC), "r27": slot_value(i, 2027, WR)} for i in curve.index]
+          "c27": slot_value(i, 2027, WC), "r27": slot_value(i, 2027, WR),
+          "c28": slot_value(i, 2028, WC), "r28": slot_value(i, 2028, WR),
+          "c29": slot_value(i, 2029, WC), "r29": slot_value(i, 2029, WR)} for i in curve.index]
 json.dump({"picks": picks, "slots": slots}, open(OUT, "w"))
 P = pd.DataFrame(picks)
 print(P[P.season == 2027].sort_values("c", ascending=False).head(6)[["id", "orig", "owner", "expSlot", "c", "rb"]].round(1).to_string(index=False))

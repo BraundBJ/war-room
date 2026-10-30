@@ -31,6 +31,8 @@ if [ "${SKIP_DOWNLOAD:-0}" != 1 ]; then
     curl -sSf -A war-room -o "$(echo $p | tr / _).json" "$A/$p"; done
   curl -sSf -A war-room -o players_nfl.json "$A/players/nfl"
   for w in $(seq 0 18); do curl -sSf -A war-room -o "tx_$w.json" "$A/league/$L/transactions/$w"; done
+  for w in $(seq 1 17); do curl -sSf -A war-room -o "matchups_$w.json" "$A/league/$L/matchups/$w"; done
+  curl -sSfL --retry 3 -o "$S/raw/fantasycalc.json" "https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=1&numTeams=12&ppr=1" || echo "market values unavailable"
 fi
 
 # last completed regular-season week of 2026
@@ -53,13 +55,4 @@ python3 value.py proj/projections_2026.csv features.parquet "$IDS" "$R/league_${
 python3 team_value.py proj/actual_values.csv proj/actual_values_settings.json "$R/league_${L}_rosters.json" "$R/league_${L}_users.json" proj
 python3 picks_value.py proj/picks.json
 python3 build_site_data.py "$WR_ROOT/site/data.json"
-REPO_DIR="$REPO" python3 - <<'PY'
-import os
-W, REPO = os.environ["WR_ROOT"], os.environ.get("REPO_DIR", ".")
-s = open(f"{REPO}/site/page.src.html").read()
-d = open(f"{W}/site/data.json").read().replace("</", "<\\/")
-os.makedirs(f"{REPO}/public", exist_ok=True)
-html = '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\n' + s.replace("__DATA__", d) + "\n</html>\n"
-open(f"{REPO}/public/index.html", "w").write(html)
-print("wrote public/index.html", round(len(html) / 1024), "KB")
-PY
+python3 "$REPO/assemble.py" "$WR_ROOT" "$REPO"

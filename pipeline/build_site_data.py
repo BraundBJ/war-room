@@ -56,7 +56,7 @@ for row in V.itertuples():
         "sd": [r(getattr(row, f"sd{h}"), 2) for h in range(6)],
         "c": r(row.contender, 0), "cl": r(row.contender_lo, 0), "ch": r(row.contender_hi, 0),
         "rb": r(row.rebuilder, 0), "rl": r(row.rebuilder_lo, 0), "rh": r(row.rebuilder_hi, 0),
-        "sig": r(row.stat_signal, 2), "tgt": r(row.early_tgt_share, 3), "car": r(row.early_car_share, 3),
+        "sig": r(row.stat_signal, 2), "xp": r(row.exp_ppg), "tgt": r(row.early_tgt_share, 3), "car": r(row.early_car_share, 3),
         "snap": r(row.early_snap_pct, 3), "td": r(row.early_td_pg, 2),
     })
 index = {p["id"]: i for i, p in enumerate(players)}
@@ -151,17 +151,50 @@ slot_rows = []
 for sl in PK["slots"]:
     h = hit.loc[sl["slot"]] if sl["slot"] in hit.index else None
     slot_rows.append({"slot": sl["slot"], "c27": round(sl["c27"] * SC_C), "r27": round(sl["r27"] * SC_R),
+                      "c28": round(sl.get("c28", 0) * SC_C), "r28": round(sl.get("r28", 0) * SC_R),
+                      "c29": round(sl.get("c29", 0) * SC_C), "r29": round(sl.get("r29", 0) * SC_R),
                       "hit": None if h is None else round(float(h["hit_rate%"]) / 100, 3),
                       "star": None if h is None else round(float(h["Star%"]) / 100, 3)})
+
+# raw league snapshot: the page rebuilds every league-specific number from this (or from a live Sleeper
+# pull of any league), so the default league and shared leagues use the same code
+LID = "1313707182407024640"
+_lg = json.load(open(f"{LG}/league_{LID}.json"))
+_mu = {}
+for f in glob.glob(f"{LG}/matchups_*.json"):
+    w = int(f.split("_")[-1].split(".")[0])
+    _mu[w] = [[m["roster_id"], m.get("matchup_id"), round(m.get("points") or 0, 2)] for m in (json.load(open(f)) or [])]
+raw = {"league": {"league_id": LID, "name": _lg.get("name"), "total_rosters": _lg.get("total_rosters"),
+                  "roster_positions": _lg.get("roster_positions"), "season": _lg.get("season"),
+                  "settings": {k: (_lg.get("settings") or {}).get(k) for k in ("playoff_week_start", "playoff_teams", "draft_rounds", "num_teams")},
+                  "scoring_settings": {k: (_lg.get("scoring_settings") or {}).get(k) for k in ("rec", "bonus_rec_te", "pass_td")}},
+       "users": [{"user_id": u["user_id"], "display_name": u.get("display_name"), "metadata": {"team_name": (u.get("metadata") or {}).get("team_name")}}
+                 for u in json.load(open(f"{LG}/league_{LID}_users.json"))],
+       "rosters": [{"roster_id": r["roster_id"], "owner_id": r.get("owner_id"), "players": r.get("players") or [], "taxi": r.get("taxi") or [],
+                    "settings": {k: (r.get("settings") or {}).get(k) for k in ("wins", "losses", "ties", "fpts", "fpts_decimal")}}
+                   for r in json.load(open(f"{LG}/league_{LID}_rosters.json"))],
+       "traded_picks": json.load(open(f"{LG}/league_{LID}_traded_picks.json")),
+       "matchups": _mu}
+# market (perceived) values: FantasyCalc dynasty values from real trades, this league's format
+market = {}
+try:
+    for x in json.load(open(ROOT + "/stats/raw/fantasycalc.json")):
+        pl = x["player"]
+        key = pl["name"] if pl.get("position") == "PICK" else pl.get("sleeperId")
+        if key:
+            market[key] = x["value"]
+except FileNotFoundError:
+    pass
 
 data = {
     "meta": {"built": datetime.date.today().isoformat(), "throughWeek": WEEK, "restWeeks": REST, "season": 2026,
              "repl": settings["replacement_ppg"], "wC": settings["w_contender"], "wR": settings["w_rebuilder"],
              "cv": cv[["position", "horizon", "r2_calibrated", "auc_healthy", "resid_sd"]].to_dict("records"),
-             "me": "BraundJB", "scale": SCALE, "scaleC": SC_C, "scaleR": SC_R},
+             "me": "BraundJB", "leagueId": LID, "scale": SCALE, "scaleC": SC_C, "scaleR": SC_R},
     "players": players, "teams": teams, "trades": log, "picks": pick_list, "slots": slot_rows,
     # rookie slot study (rookie/scripts/build_study_site.py) for the Draft study tab
     "study": json.load(open(ROOT + "/rookie/results/site_study.json")),
+    "raw": raw, "market": market,
 }
 json.dump(data, open(OUT, "w"), separators=(",", ":"))
 print(len(players), "players", len(teams), "teams", len(log), "trades", round(len(json.dumps(data)) / 1024), "KB")
