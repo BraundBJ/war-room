@@ -115,7 +115,8 @@ reg_kw = dict(max_iter=300, learning_rate=0.05, max_leaf_nodes=15, min_samples_l
 
 cv_rows, preds = [], []
 cur = X[X.season == CUR].copy()
-OOF_ROWS = []
+OOF_ROWS, CAL_ROWS = [], []
+CAL_KEEP = 0.5  # share of the extra calibration terms kept
 for pos in POS:
     D = X[X.pos == pos]
     out = cur[cur.pos == pos][["player_id", "name", "pos", "age", "exp", "e_games", "e_ppg", "p1_ppg"]].copy()
@@ -144,11 +145,27 @@ for pos in POS:
         hi = res.groupby(bins).quantile(0.9)
         edges = oof.quantile([1 / 3, 2 / 3]).values
         games_q = tr.loc[tr[f"q{h}"] == 1, f"g{h}"].mean()
-        # calibration: shrink toward the healthy mean by the held-out slope (0..1)
+        # calibration (v2): held-out forecasts vs what happened. A straight-line shrink toward the mean
+        # under-called strong players, and WRs with 1-3 games overreacted, so the fit gets its own slope
+        # above the 80th percentile of forecasts and its own slope for short samples. Both extra terms
+        # are pulled halfway back to zero (CAL_KEEP) so the correction stays modest.
         mu = float(np.average(yv, weights=w[yv.index]))
         slope = float(np.clip(np.cov(yv, oof)[0, 1] / np.var(oof, ddof=1), 0, 1))
-        res = yv - (mu + slope * (oof - mu))
-        cal_oof = mu + slope * (oof - mu)
+        q80 = float(oof.quantile(0.8))
+        few = (healthy.e_games.fillna(0) <= 3).astype(float).values
+        def _basis(o, f):
+            o = np.asarray(o, float)
+            return np.column_stack([np.ones_like(o), o - mu, np.maximum(0, o - q80), f * (o - mu)])
+        Bm = _basis(oof, few)
+        sw = np.sqrt(w[yv.index].values)
+        coef = np.linalg.lstsq(Bm * sw[:, None], yv.values * sw, rcond=None)[0]
+        coef[1] = float(np.clip(coef[1], 0, 1))
+        coef[2] *= CAL_KEEP; coef[3] *= CAL_KEEP
+        calf = lambda o, f: _basis(o, f) @ coef
+        CAL_ROWS.append({"position": pos, "horizon": h, "base_slope": round(slope, 3), "slope": round(coef[1], 3),
+                         "top_extra": round(coef[2], 3), "few_games": round(coef[3], 3), "q80": round(q80, 2)})
+        cal_oof = pd.Series(calf(oof.values, few), index=oof.index)
+        res = yv - cal_oof
         OOF_ROWS.append(pd.DataFrame({"pos": pos, "h": h, "season": healthy.season.values, "player_id": healthy.player_id.values,
                                       "y": yv.values, "oof": oof.values, "cal": cal_oof.values, "w": w[yv.index].values}))
         r2_cal = 1 - (res ** 2).sum() / ((yv - yv.mean()) ** 2).sum()
@@ -167,7 +184,7 @@ for pos in POS:
             # rest of 2026: a teammate whose injury is season-ending is gone, so project as if absent
             gone = cp.player_id.isin(SEASON_GONE_MATES)
             cp.loc[gone, ["e_comp_absent", "e_comp_absent_long"]] = 0.0
-        ppg = mu + slope * (m.predict(cp[FEATS]) - mu)
+        ppg = calf(m.predict(cp[FEATS]), (cp.e_games.fillna(0) <= 3).astype(float).values)
         b = np.digitize(ppg, edges)
         out[f"ppg{h}"] = ppg
         out[f"ppg{h}_p10"] = ppg + lo.reindex(b).values
@@ -177,6 +194,8 @@ for pos in POS:
     preds.append(out)
 
 pd.concat(OOF_ROWS).to_parquet(f"{OUT}/projection_oof.parquet")
+pd.DataFrame(CAL_ROWS).to_csv(f"{OUT}/projection_calibration.csv", index=False)
+print(pd.DataFrame(CAL_ROWS).to_string(index=False))
 cv = pd.DataFrame(cv_rows)
 cv.to_csv(f"{OUT}/projection_cv.csv", index=False)
 P = pd.concat(preds)
