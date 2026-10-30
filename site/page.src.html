@@ -1009,7 +1009,7 @@ async function findTrades() {
     }
     cands.sort((a, b) => b.est - a.est);
     const per = new Map(), short = [];
-    for (const c of cands) { const k = c.x.p.id; if ((per.get(k) || 0) >= 2) continue; per.set(k, (per.get(k) || 0) + 1); short.push(c); if (short.length >= 24) break; }
+    for (const c of cands) { const k = c.x.p.id; if ((per.get(k) || 0) >= 3) continue; per.set(k, (per.get(k) || 0) + 1); short.push(c); if (short.length >= 60) break; }
     const res = [];
     for (let i = 0; i < short.length; i++) {
       out.innerHTML = `<p class="empty">Simulating the best deals… ${i + 1} of ${short.length}</p>`;
@@ -1021,7 +1021,7 @@ async function findTrades() {
       if (mine > 0) res.push({c, a, mine, myScore});
     }
     res.sort((u, v) => v.mine - u.mine);
-    fResults = {goal, list: res.slice(0, 15)};
+    fResults = {goal, list: res};
     renderFinder();
   } finally { fBusy = false; btn.disabled = false; }
 }
@@ -1030,7 +1030,7 @@ function renderFinder() {
   if (!fResults) { out.innerHTML = ''; return; }
   if (!fResults.list.length) { out.innerHTML = '<p class="empty">No market-fair deals that help you. Try another goal, position or team, a looser fairness setting, or sending more players.</p>'; return; }
   const nm = a => a.k ? `${esc(a.k.n)} <span class="mut">${f0(a.k.mv)}</span>` : `<span class="pos">${a.p.p}</span>${esc(a.p.n)} <span class="mut">${f0(a.p.mv)}</span>`;
-  out.innerHTML = `<div class="tw"><table data-key="finder"><thead><tr><th>You get</th><th class="l">You send</th><th class="l">From</th><th>Market: get / send</th><th>Market balance</th><th>Your gain</th><th>Rest of 2026 / wk</th><th>Your score</th><th></th></tr></thead><tbody>${fResults.list.map((r, i) => {
+  out.innerHTML = `<p class="mut" style="margin:0 0 6px;font-size:12px">${fResults.list.length} deals</p><div class="tw tall"><table data-key="finder"><thead><tr><th>You get</th><th class="l">You send</th><th class="l">From</th><th>Market: get / send</th><th>Market balance</th><th>Your gain</th><th>Rest of 2026 / wk</th><th>Your score</th><th></th></tr></thead><tbody>${fResults.list.map((r, i) => {
     const bal = r.c.mSend / r.c.mGet - 1;
     return `<tr>
     <td data-s="${esc(r.c.x.p.n)}"><span class="pl"><span class="pos">${r.c.x.p.p}</span><button type="button" class="pname" data-pid="${r.c.x.p.id}">${esc(r.c.x.p.n)}</button><span class="meta"><span class="rk">${rankTxt(r.c.x.p)}</span> · ${esc(r.c.x.p.t || 'FA')} · ${r.c.x.p.age != null ? r.c.x.p.age.toFixed(0) : '—'} yrs</span></span></td>
