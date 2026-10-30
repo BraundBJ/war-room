@@ -1157,7 +1157,7 @@ function tierChart(rows) {
     const every = n > 12 ? 3 : 1;
     if (i % every === 0 || n <= 12) g += `<text x="${x(i) + bw / 2}" y="${Hh - 12}" text-anchor="middle">${r.slot}</text>`;
     if (n > 12 && i % 12 === 0 && i) g += `<line class="ax" x1="${x(i)}" x2="${x(i)}" y1="${mt}" y2="${Hh - mb}"/>`;
-    const tipH = `<b>${r.slot}</b> · ${r.picks.toLocaleString()} picks<br>Hit rate <b>${pc(hb[0])}</b> <span class="k">(${pc(hb[1])} to ${pc(hb[2])})</span><br>` +
+    const tipH = `<b>${r.slot}</b> · ${r.picks.toLocaleString()} picks<br>Hit rate <b>${pc(hb[0])}</b> <span class="k">(${pc(hb[1])} to ${pc(hb[2])})</span><br>Median PPG, years 1-3: <b>${r.med != null ? r.med.toFixed(1) : '—'}</b> <span class="k">RB/WR/TE, every game, never played = 0</span><br>` +
       TIERS.map(t => `${tierSw(t)}${TIER_NAME[t] || t} ${pc(r.tiers[t])}`).join('<br>');
     g += `<rect class="hit" x="${x(i)}" y="${mt}" width="${bw}" height="${Hh - mt - mb}" ${tipAttr(tipH)}/>`;
   });
@@ -1297,7 +1297,7 @@ function renderStudy() {
   const el = document.getElementById('v-study'), hl = ST.headline;
   const rSel = sState.round === 'all' ? ST.slots : ST.slots.filter(s => s.slot.startsWith(sState.round + '.'));
   const ppgKey = sState.ppgYear;
-  const ppgRows = rSel.map(s => ({label: s.slot, v: ppgKey === 0 ? s.ppg3 : s.ppg[ppgKey - 1]}));
+  const ppgRows = rSel.map(s => ({label: s.slot, v: ppgKey === 0 ? s.ppg3 : s.ppg[ppgKey - 1], extra: s.med != null ? `Median PPG, years 1-3: <b>${s.med.toFixed(1)}</b> <span class="k">every game, never played = 0</span>` : ''}));
   el.innerHTML = `
     <div><h2>Rookie draft study</h2><p class="lede">What each slot of a 12-team, 1QB, full PPR, straight 3-round rookie draft has actually returned. ${hl.picks.toLocaleString()} picks from ${hl.drafts.toLocaleString()} Sleeper rookie drafts in ${hl.leagues.toLocaleString()} leagues, ${hl.classes} classes, ${hl.players} distinct players, graded on each player's best season in his first three. Intervals resample players, not leagues, since thousands of leagues taking the same rookie are one outcome.</p></div>
     <div class="grid2 wide-r">
