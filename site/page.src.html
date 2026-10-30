@@ -180,6 +180,7 @@ dialog.pv::backdrop { background: rgba(10, 16, 13, .45); }
 /* explanations live in How it works only */
 .view:not(#v-method) .lede:not(.keep), .study .take { display: none; }
 .tiers td, .tiers th { white-space: nowrap; }
+.grid2.wide-r { grid-template-columns: minmax(0, 1fr); }
 
 /* v2: league switcher, team links, trends, sorting, heat cells */
 .picker { flex-wrap: wrap; }
@@ -940,7 +941,8 @@ function renderPicks() {
     <div class="grid2">
       <div class="panel"><h3>Pick capital by team</h3><div class="tw"><table data-key="pickcap"><thead><tr><th>Team</th><th>Picks</th><th>Firsts</th><th>Contender</th><th>Rebuilder</th><th>Market</th></tr></thead><tbody>${byTeam.map(r => `<tr>${teamCell(r.t.name)}<td>${r.n}</td><td>${r.firsts}</td><td>${f0(r.c)}</td><td><b>${f0(r.r)}</b></td><td>${f0(r.mv)}</td></tr>`).join('')}</tbody></table></div></div>
       <div class="panel"><h3>Value by slot, 2027 draft</h3>
-        <div class="tw tall"><table data-key="slotval"><thead><tr><th>Slot</th><th>Hit rate</th><th>Star rate</th><th>Contender</th><th>Rebuilder</th></tr></thead><tbody>${SL.slice(0, Math.min(SL.length, L.rounds * 12)).map((r, i) => { const v = slotVal(Math.round(i * n / 12) + 1, 2027); return `<tr><td><b>${r.slot}</b></td><td>${pct(r.hit)}</td><td>${pct(r.star)}</td><td>${f0(v[0])}</td><td>${f0(v[1])}</td></tr>`; }).join('')}</tbody></table></div></div>
+        <div class="tw tall"><table data-key="slotval"><thead><tr><th>Slot</th><th>Hit rate</th><th>Star rate</th><th>Contender</th><th>Rebuilder</th></tr></thead><tbody>${SL.slice(0, Math.min(SL.length, L.rounds * 12)).map((r, i) => { const v = slotVal(Math.round(i * n / 12) + 1, 2027); return `<tr><td><b>${r.slot}</b></td><td>${pct(r.hit)}</td><td>${pct(r.star)}</td><td>${f0(v[0])}</td><td>${f0(v[1])}</td></tr>`; }).join('')}</tbody></table></div>
+        <div class="legend"><span>Hit and star rates: Draft study tiers</span><span>Values: points past picks at each slot actually scored above a replacement starter in years 1 to 3, extended through 2031, so a big star counts for more than a borderline one</span></div></div>
     </div>
     <div class="panel"><h3>Every pick</h3><div class="tw tall"><table data-key="allpicks"><thead><tr><th>Pick</th><th class="l">Original team</th><th class="l">Owner</th><th>Projected slot</th><th>Contender</th><th>Rebuilder</th><th>Market</th></tr></thead><tbody>${all.map(k => `<tr><td class="l" data-s="${k.season}-${k.round}"><b>${k.season} ${ord(k.round)}</b></td><td class="l">${esc(k.orig)}</td><td class="l">${esc(k.o)}${k.o !== k.orig ? ' <span class="chip">traded</span>' : ''}</td><td data-v="${k.season === 2027 ? k.exp : 99}">${slotLabel(k)}</td><td>${f0(k.c)}</td><td><b>${f0(k.rb)}</b></td><td>${f0(k.mv)}</td></tr>`).join('')}</tbody></table></div></div>`;
 }
@@ -1297,7 +1299,7 @@ function renderStudy() {
   const ppgRows = rSel.map(s => ({label: s.slot, v: ppgKey === 0 ? s.ppg3 : s.ppg[ppgKey - 1]}));
   el.innerHTML = `
     <div><h2>Rookie draft study</h2><p class="lede">What each slot of a 12-team, 1QB, full PPR, straight 3-round rookie draft has actually returned. ${hl.picks.toLocaleString()} picks from ${hl.drafts.toLocaleString()} Sleeper rookie drafts in ${hl.leagues.toLocaleString()} leagues, ${hl.classes} classes, ${hl.players} distinct players, graded on each player's best season in his first three. Intervals resample players, not leagues, since thousands of leagues taking the same rookie are one outcome.</p></div>
-    <div class="grid2">
+    <div class="grid2 wide-r">
     <div class="panel"><h3>Criteria</h3>
       <div class="tw"><table class="tiers"><tbody>
         <tr><td><b>Source</b></td><td class="l">Sleeper dynasty leagues</td></tr>
@@ -1312,14 +1314,11 @@ function renderStudy() {
         <tr><td><b>Intervals</b></td><td class="l">95%, resampling players, not leagues</td></tr>
       </tbody></table></div></div>
     <div class="panel"><h3>Outcome tiers</h3>
-      <div class="tw"><table class="tiers"><thead><tr><th>Tier</th><th>RB / WR finish</th><th>QB / TE finish</th><th class="l">In lineup terms</th></tr></thead><tbody>
-        <tr><td>${tierSw('Star')}<b>Star</b></td><td>1 to 12</td><td>1 to 6</td><td class="l">RB1 / WR1, elite QB or TE</td></tr>
-        <tr><td>${tierSw('Hit')}<b>Hit</b></td><td>13 to 24</td><td>7 to 12</td><td class="l">RB2 / WR2, starting QB or TE</td></tr>
-        <tr><td>${tierSw('Solid')}<b>Solid</b></td><td>25 to 36</td><td>13 to 18</td><td class="l">Flex</td></tr>
-        <tr><td>${tierSw('Miss')}<b>Miss</b></td><td>37 to 48</td><td>19 to 24</td><td class="l">Bench depth</td></tr>
-        <tr><td>${tierSw('Bust')}<b>Bust</b></td><td>49+</td><td>25+</td><td class="l">Not a fantasy starter</td></tr>
+      <div class="tw"><table class="tiers"><thead><tr><th>Tier</th><th>RB / WR finish</th><th>QB / TE finish</th>${['RB', 'WR', 'QB', 'TE'].map(p => `<th>${p} PPG</th>`).join('')}<th class="l">In lineup terms</th></tr></thead><tbody>
+        ${[['Star', '1 to 12', '1 to 6', 'RB1 / WR1, elite QB or TE'], ['Hit', '13 to 24', '7 to 12', 'RB2 / WR2, starting QB or TE'], ['Solid', '25 to 36', '13 to 18', 'Flex'], ['Miss', '37 to 48', '19 to 24', 'Bench depth'], ['Bust', '49+', '25+', 'Not a fantasy starter']].map(([t, a, b, d], k) =>
+          `<tr><td>${tierSw(t)}<b>${t}</b></td><td>${a}</td><td>${b}</td>${['RB', 'WR', 'QB', 'TE'].map(p => { const c = (ST.cuts || {})[p]; if (!c) return '<td>—</td>'; return `<td>${k === 0 ? c[0].toFixed(1) + '+' : k === 4 ? 'under ' + c[3].toFixed(1) : c[k].toFixed(1) + ' to ' + c[k - 1].toFixed(1)}</td>`; }).join('')}<td class="l">${d}</td></tr>`).join('')}
       </tbody></table></div>
-      <div class="legend"><span>Finish = PPG rank at his position in his best season of years 1 to 3 (8+ games)</span><span>Hit rate = Star + Hit</span><span>Never played 8+ games: left out of rates</span></div></div>
+      <div class="legend"><span>Finish = PPG rank at his position in his best season of years 1 to 3 (8+ games, full PPR)</span><span>PPG = average line 2017 to 2025; it moves a little each year</span><span>Hit rate = Star + Hit</span><span>Never played 8+ games: left out of rates</span></div></div>
     </div>
 
     <div class="sec"><div class="hd"><h3><span class="num">1</span>Hit rate by round</h3></div>
