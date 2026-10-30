@@ -277,7 +277,7 @@ header.top.collapsed nav.tabs { margin-top: 2px; }
         <label class="fl">Want <select id="fPos"><option value="">Any position</option><option>QB</option><option>RB</option><option>WR</option><option>TE</option><option value="FLEX">FLEX</option></select></label>
         <label class="fl">From <select id="fTeam"></select></label>
         <label class="fl">I send up to <select id="fMax"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></label>
-        <label class="fl">Market fairness <select id="fFair"><option value="even">About even</option><option value="over">I can overpay a bit</option><option value="under">Lean my way</option></select></label>
+        <label class="fl">Market fairness <select id="fFair"><option value="exact">Dead even (±3%)</option><option value="even" selected>About even</option><option value="over">I can overpay a bit</option><option value="under">Lean my way</option></select></label>
         <label class="fl"><input type="checkbox" id="fPicks" checked> Include my picks</label>
         <button type="button" class="more" id="fGo">Find trades</button>
       </div>
@@ -971,7 +971,7 @@ async function findTrades() {
   const goal = document.getElementById('fGoal').value === 'mine' ? me.mode : document.getElementById('fGoal').value;
   const want = document.getElementById('fPos').value, partner = document.getElementById('fTeam').value;
   const maxSend = +document.getElementById('fMax').value, usePicks = document.getElementById('fPicks').checked;
-  const [lo, hi] = ({even: [0.95, 1.08], over: [0.95, 1.2], under: [0.85, 1.05]})[document.getElementById('fFair').value];
+  const [lo, hi] = ({exact: [0.97, 1.03], even: [0.95, 1.08], over: [0.95, 1.2], under: [0.85, 1.05]})[document.getElementById('fFair').value];
   const others = L.teams.filter(t => t.name !== ME && (!partner || t.name === partner));
   const mv = a => a.k ? a.k.mv : a.p.mv;
   try {
