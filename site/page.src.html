@@ -195,6 +195,9 @@ dialog.pv::backdrop { background: rgba(10, 16, 13, .45); }
 .tname { all: unset; cursor: pointer; font-weight: 600; } .tname:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .tname.sm { font-weight: 400; } td .meta { display: block; font-size: 11px; color: var(--muted); }
 .teamhead { display: flex; justify-content: space-between; align-items: start; gap: 12px; flex-wrap: wrap; }
+.fl { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+td.wrapc { white-space: normal; min-width: 160px; }
+.rk { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .up { color: var(--good); font-weight: 700; } .dn { color: var(--bad); font-weight: 700; }
 td.tr { text-align: center; }
 .chip.fa { background: var(--good-soft); color: var(--good); }
@@ -256,7 +259,18 @@ td.heat { text-align: center; min-width: 46px; font-size: 12px; }
   </section>
 
   <section class="view" id="v-trade" hidden>
-    <div><h2>Trade calculator</h2><p class="lede">Pick two teams and the players and picks each sends. Both rosters are re-simulated week by week, so a 2-for-1 is judged by what each lineup actually scores. Picks add their value on top.</p></div>
+    <div><h2>Trades</h2><p class="lede">Pick two teams and the players and picks each sends. Both rosters are re-simulated week by week, so a 2-for-1 is judged by what each lineup actually scores. Picks add their value on top.</p></div>
+    <div class="panel"><h3>Trade finder</h3>
+      <div class="controls">
+        <label class="fl">Goal <select id="fGoal"><option value="mine">My mode</option><option value="contender">Win now</option><option value="rebuilder">Build for the future</option></select></label>
+        <label class="fl">Want <select id="fPos"><option value="">Any position</option><option>QB</option><option>RB</option><option>WR</option><option>TE</option><option value="FLEX">FLEX</option></select></label>
+        <label class="fl">From <select id="fTeam"></select></label>
+        <label class="fl">I send up to <select id="fMax"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></label>
+        <label class="fl"><input type="checkbox" id="fPicks" checked> Include my picks</label>
+        <button type="button" class="more" id="fGo">Find trades</button>
+      </div>
+      <div id="fOut"></div></div>
+    <h3 id="calc">Trade calculator</h3>
     <div class="trade">
       <div class="side"><h3>Team A sends</h3><select id="tA" aria-label="Team A"></select><input type="search" id="sA" placeholder="Filter roster" aria-label="Filter Team A roster"><div class="pick-list" id="lA"></div></div>
       <div class="side"><h3>Team B sends</h3><select id="tB" aria-label="Team B"></select><input type="search" id="sB" placeholder="Filter roster" aria-label="Filter Team B roster"><div class="pick-list" id="lB"></div></div>
@@ -604,37 +618,58 @@ const trCell = p => {
 };
 
 // ---------- value to a team ----------
-const valCache = new Map(), pending = new Set();
-function valTo(name, p) {
+const valCache = new Map(), pending = new Map();
+// value of player p to team `name`, in a given mode (contender / rebuilder); null while being worked out
+function valToM(name, p, mode) {
   const t = L.teamBy.get(name); if (!t || !p) return null;
-  if (L.pre && L.pre.has(name)) { const v = L.pre.get(name)[byId.get(p.id)]; if (v) return t.mode === 'contender' ? v[0] : v[1]; }
+  const k = mode === 'contender' ? 0 : 1;
+  if (L.pre && L.pre.has(name)) { const v = L.pre.get(name)[byId.get(p.id)]; if (v) return v[k]; }
   const m = valCache.get(name);
-  if (m) { const v = m.get(p.id); return v ? (t.mode === 'contender' ? v[0] : v[1]) : 0; }
+  if (m) { const v = m.get(p.id); return v ? v[k] : 0; }
   ensureVals(name); return null;
 }
-function ensureVals(name) {
-  if (valCache.has(name) || pending.has(name)) return;
-  pending.add(name);
-  const t = L.teamBy.get(name), lid = L.id;
-  const base = seasonPts(t.roster, SIMS_FAST), inRoster = new Set(t.roster);
-  const cands = t.roster.map(id => P[byId.get(id)]).filter(Boolean)
-    .concat(P.filter(p => !inRoster.has(p.id) && Math.max(p.c || 0, p.rb || 0) > 25).sort((a, b) => Math.max(b.c, b.rb) - Math.max(a.c, a.rb)).slice(0, 300));
-  const out = new Map(); let i = 0;
-  setStatus(`Working out player values for ${name}…`);
-  const step = () => {
-    if (!L || L.id !== lid) { pending.delete(name); return; }
-    const end = Math.min(cands.length, i + 12);
-    for (; i < end; i++) {
-      const p = cands[i], on = inRoster.has(p.id);
-      const alt = seasonPts(on ? t.roster.filter(x => x !== p.id) : t.roster.concat([p.id]), SIMS_FAST);
-      const d = HZ.map(h => on ? base[h] - alt[h] : alt[h] - base[h]);
-      out.set(p.id, [weigh(d, 'contender'), weigh(d, 'rebuilder')]);
-    }
-    if (i < cands.length) { setStatus(`Working out player values for ${name}… ${Math.round(100 * i / cands.length)}%`); setTimeout(step, 0); return; }
-    valCache.set(name, out); pending.delete(name); setStatus(''); renderAll();
-  };
-  setTimeout(step, 30);
+const valTo = (name, p) => { const t = L.teamBy.get(name); return t ? valToM(name, p, t.mode) : null; };
+function ensureVals(name, quiet = false) {
+  if (valCache.has(name) || (L.pre && L.pre.has(name))) return Promise.resolve();
+  if (pending.has(name)) return pending.get(name);
+  const pr = new Promise(resolve => {
+    const t = L.teamBy.get(name), lid = L.id;
+    const base = seasonPts(t.roster, SIMS_FAST), inRoster = new Set(t.roster);
+    const cands = t.roster.map(id => P[byId.get(id)]).filter(Boolean)
+      .concat(P.filter(p => !inRoster.has(p.id) && Math.max(p.c || 0, p.rb || 0) > 25).sort((a, b) => Math.max(b.c, b.rb) - Math.max(a.c, a.rb)).slice(0, 300));
+    const out = new Map(); let i = 0;
+    setStatus(`Working out player values for ${name}…`);
+    const step = () => {
+      if (!L || L.id !== lid) { pending.delete(name); resolve(); return; }
+      const end = Math.min(cands.length, i + 12);
+      for (; i < end; i++) {
+        const p = cands[i], on = inRoster.has(p.id);
+        const alt = seasonPts(on ? t.roster.filter(x => x !== p.id) : t.roster.concat([p.id]), SIMS_FAST);
+        const d = HZ.map(h => on ? base[h] - alt[h] : alt[h] - base[h]);
+        out.set(p.id, [weigh(d, 'contender'), weigh(d, 'rebuilder')]);
+      }
+      if (i < cands.length) { setStatus(`Working out player values for ${name}… ${Math.round(100 * i / cands.length)}%`); setTimeout(step, 0); return; }
+      valCache.set(name, out); pending.delete(name); setStatus('');
+      if (!quiet) renderAll();
+      resolve();
+    };
+    setTimeout(step, 30);
+  });
+  pending.set(name, pr);
+  return pr;
 }
+
+// ---------- rankings: overall and by position, per mode ----------
+function computeRanks() {
+  for (const [mode, key] of [['contender', 'c'], ['rebuilder', 'rb']]) {
+    const sorted = P.filter(p => (p[key] || 0) > 0).sort((a, b) => b[key] - a[key]);
+    const posN = {};
+    P.forEach(p => { p['rk_' + key] = null; p['pr_' + key] = null; });
+    sorted.forEach((p, i) => { posN[p.p] = (posN[p.p] || 0) + 1; p['rk_' + key] = i + 1; p['pr_' + key] = posN[p.p]; });
+  }
+}
+const rankKey = () => ((L.teamBy.get(ME) || {}).mode === 'rebuilder' ? 'rb' : 'c');
+const rankTxt = p => { const k = rankKey(); return p['rk_' + k] ? `#${p['rk_' + k]} · ${p.p}${p['pr_' + k]}` : 'unranked'; };
 
 // ---------- load a league ----------
 const API = 'https://api.sleeper.app/v1';
@@ -669,9 +704,10 @@ function setLeague(raw, {isDefault = false, live = false, meUid = null} = {}) {
     }
   }
   L.flexRepl = L.def.flex.map(g => Math.max(...[...g.pos].map(p => L.repl[p] || 0)));
-  lpCache.clear(); baseCache.clear(); valCache.clear(); pending.clear();
+  lpCache.clear(); baseCache.clear(); valCache.clear(); pending.clear(); fResults = null;
   buildTeams(raw);
   computeValues();
+  computeRanks();
   // precomputed team values are only valid while the roster matches the weekly build
   L.pre = null;
   if (isDefault) {
@@ -714,7 +750,7 @@ const sigChip = s => s == null ? '<span class="mut">—</span>' : s >= 1 ? `<spa
 const sigCell = p => `<td data-v="${p.sig ?? -99}">${sigChip(p.sig)}</td>`;
 const modeChip = m => `<span class="chip ${m === 'contender' ? 'c' : ''}">${m === 'contender' ? 'Contender' : 'Rebuilder'}</span>`;
 const injTag = p => p.inj ? `<span class="inj ${p.inj.s === 'Questionable' ? 'q' : ''}" title="${esc(p.inj.b || '')}">${p.inj.s === 'Questionable' ? 'Q' : esc(p.inj.s)}</span>` : '';
-const plCell = p => `<td data-s="${esc(p.n)}"><span class="pl"><span class="pos">${p.p}</span><button type="button" class="pname" data-pid="${p.id}">${esc(p.n)}</button>${injTag(p)}<span class="meta">${esc(p.t || 'FA')} · ${p.age != null ? p.age.toFixed(0) : '—'} yrs</span></span></td>`;
+const plCell = p => `<td data-s="${esc(p.n)}"><span class="pl"><span class="pos">${p.p}</span><button type="button" class="pname" data-pid="${p.id}">${esc(p.n)}</button>${injTag(p)}<span class="meta"><span class="rk">${rankTxt(p)}</span> · ${esc(p.t || 'FA')} · ${p.age != null ? p.age.toFixed(0) : '—'} yrs</span></span></td>`;
 const teamCell = name => { const t = L.teamBy.get(name); return t ? `<td data-s="${esc(t.label)}"><button type="button" class="tname" data-team="${esc(t.name)}">${esc(t.label)}</button><span class="meta">${esc(t.name)}</span></td>` : `<td class="l">${esc(name)}</td>`; };
 const ownerCell = p => p.o === 'Free agent' ? '<td class="l"><span class="chip fa">Free agent</span></td>' : `<td class="l" data-s="${esc(p.o)}"><button type="button" class="tname sm" data-team="${esc(p.o)}">${esc(p.o)}</button></td>`;
 const OL_LABEL = {gain: 'Gaining', risk: 'Gaining, at risk', out: 'Out', q: 'Questionable'};
@@ -904,6 +940,103 @@ function initTrade() {
   rA(); rB(); renderVerdicts();
 }
 
+// ---------- trade finder ----------
+// Searches every other roster for deals that help you (in the goal you pick) and that the other owner should
+// also accept in their own mode. Candidates are screened with each team's value-to-team numbers, then the
+// best ones are re-simulated with the full lineup model, the same one the calculator uses.
+let fResults = null, fBusy = false;
+function finderControls() {
+  const sel = document.getElementById('fTeam'), cur = sel.value;
+  sel.innerHTML = '<option value="">Any team</option>' + L.teams.filter(t => t.name !== ME).sort((a, b) => a.name.localeCompare(b.name))
+    .map(t => `<option value="${esc(t.name)}">${esc(t.name)} · ${t.mode === 'contender' ? 'contender' : 'rebuilder'}</option>`).join('');
+  sel.value = [...sel.options].some(o => o.value === cur) ? cur : '';
+}
+async function findTrades() {
+  if (fBusy) return; fBusy = true;
+  const out = document.getElementById('fOut'), btn = document.getElementById('fGo');
+  btn.disabled = true;
+  const lid = L.id, me = L.teamBy.get(ME);
+  const goal = document.getElementById('fGoal').value === 'mine' ? me.mode : document.getElementById('fGoal').value;
+  const want = document.getElementById('fPos').value, partner = document.getElementById('fTeam').value;
+  const maxSend = +document.getElementById('fMax').value, usePicks = document.getElementById('fPicks').checked;
+  const others = L.teams.filter(t => t.name !== ME && (!partner || t.name === partner));
+  try {
+    out.innerHTML = '<p class="empty">Working out what every player is worth to each team…</p>';
+    await ensureVals(ME, true);
+    for (const t of others) { await ensureVals(t.name, true); if (L.id !== lid) return; }
+    const myAssets = me.roster.map(id => P[byId.get(id)]).filter(Boolean).map(p => ({id: p.id, p, cost: Math.max(0, valToM(ME, p, goal) || 0)}))
+      .concat(usePicks ? me.picks.map(id => L.pickById.get(id)).filter(Boolean).map(k => ({id: k.id, k, cost: pickVal(k, goal)})) : []);
+    const cands = [], seen = new Set();
+    for (const t of others) {
+      const theirGain = a => a.k ? pickVal(a.k, t.mode) : Math.max(0, valToM(t.name, a.p, t.mode) || 0);
+      const pool = myAssets.map(a => ({a, g: theirGain(a)})).filter(z => z.g > 40)
+        .sort((u, v) => v.g / (u.a.cost + 150) - u.g / (v.a.cost + 150));
+      const targets = t.roster.map(id => P[byId.get(id)]).filter(p => p && POSF(want, p))
+        .map(p => ({p, gain: valToM(ME, p, goal) || 0, tc: Math.max(0, valToM(t.name, p, t.mode) || 0)}))
+        .filter(x => x.gain > 200).sort((a, b) => b.gain - a.gain).slice(0, 10);
+      for (const x of targets) {
+        const need = x.tc * 1.02 + 25;
+        for (let s0 = 0; s0 < Math.min(8, pool.length); s0++) {
+          const pkg = [pool[s0]];
+          let g = pool[s0].g;
+          for (let j = 0; j < pool.length && g < need && pkg.length < maxSend; j++) { if (j === s0) continue; pkg.push(pool[j]); g += pool[j].g; }
+          if (g < need) continue;
+          // drop pieces the deal doesn't need
+          pkg.sort((u, v) => u.g - v.g);
+          while (pkg.length > 1 && g - pkg[0].g >= need) { g -= pkg[0].g; pkg.shift(); }
+          const cost = pkg.reduce((a, z) => a + z.a.cost, 0), net = x.gain - cost;
+          const key = t.name + '|' + x.p.id + '|' + pkg.map(z => z.a.id).sort().join(',');
+          if (net > 100 && !seen.has(key)) { seen.add(key); cands.push({t, x, pkg: pkg.map(z => z.a), est: net}); }
+        }
+      }
+    }
+    cands.sort((a, b) => b.est - a.est);
+    // keep variety: at most 3 packages per target
+    const per = new Map(), short = [];
+    for (const c of cands) { const k = c.x.p.id; if ((per.get(k) || 0) >= 3) continue; per.set(k, (per.get(k) || 0) + 1); short.push(c); if (short.length >= 28) break; }
+    const res = [];
+    for (let i = 0; i < short.length; i++) {
+      out.innerHTML = `<p class="empty">Simulating the best deals… ${i + 1} of ${short.length}</p>`;
+      await new Promise(r => setTimeout(r, 0));
+      if (L.id !== lid) return;
+      const c = short[i], give = new Set(c.pkg.map(a => a.id)), get = new Set([c.x.p.id]);
+      const a = evalSide(ME, give, get), b = evalSide(c.t.name, get, give);
+      const mine = goal === 'contender' ? a.c : a.r, myScore = goal === 'contender' ? a.sc : a.sr;
+      if (mine > 0 && b.own >= -5) res.push({c, a, b, mine, myScore});
+    }
+    res.sort((u, v) => v.mine - u.mine);
+    fResults = {goal, list: res.slice(0, 15)};
+    renderFinder();
+  } finally { fBusy = false; btn.disabled = false; }
+}
+function renderFinder() {
+  const out = document.getElementById('fOut');
+  if (!fResults) { out.innerHTML = ''; return; }
+  if (!fResults.list.length) { out.innerHTML = '<p class="empty">No deals found that both sides should take. Try another goal, position or team, or allow more players.</p>'; return; }
+  const nm = a => a.k ? `${esc(a.k.n)}` : `<span class="pos">${a.p.p}</span>${esc(a.p.n)}`;
+  out.innerHTML = `<div class="tw"><table data-key="finder"><thead><tr><th>You get</th><th class="l">You send</th><th class="l">From</th><th>Your gain</th><th>Rest of 2026 / wk</th><th>Your score</th><th>Their score</th><th></th></tr></thead><tbody>${fResults.list.map((r, i) => `<tr>
+    <td data-s="${esc(r.c.x.p.n)}"><span class="pl"><span class="pos">${r.c.x.p.p}</span><button type="button" class="pname" data-pid="${r.c.x.p.id}">${esc(r.c.x.p.n)}</button><span class="meta"><span class="rk">${rankTxt(r.c.x.p)}</span> · ${esc(r.c.x.p.t || 'FA')} · ${r.c.x.p.age != null ? r.c.x.p.age.toFixed(0) : '—'} yrs</span></span></td>
+    <td class="l wrapc">${r.c.pkg.map(nm).join('<br>')}</td>
+    <td class="l" data-s="${esc(r.c.t.name)}"><button type="button" class="tname sm" data-team="${esc(r.c.t.name)}">${esc(r.c.t.name)}</button><br>${modeChip(r.c.t.mode)}</td>
+    <td data-v="${r.mine.toFixed(0)}"><b>${sgv(r.mine)}</b></td>
+    <td data-v="${(r.a.d[0] / WEEKS[0]).toFixed(2)}">${sg(r.a.d[0] / WEEKS[0])}</td>
+    <td data-v="${r.myScore.toFixed(0)}" class="${r.myScore >= 10 ? 'num-good' : ''}">${sgv(r.myScore)}</td>
+    <td data-v="${r.b.own.toFixed(0)}">${sgv(r.b.own)}</td>
+    <td><button type="button" class="more fLoad" data-i="${i}">Open</button></td></tr>`).join('')}</tbody></table></div>
+    <div class="legend"><span>Your gain: lineup value in your goal's mode</span><span>Scores: −100 to +100, each side in its own mode; theirs ≥ 0 means they should accept</span></div>`;
+  out.querySelectorAll('.fLoad').forEach(bt => bt.addEventListener('click', () => {
+    const r = fResults.list[+bt.dataset.i];
+    if (!tradeReady) initTrade();
+    teamOptions(tA, ME); teamOptions(tB, r.c.t.name);
+    pickA.clear(); pickB.clear(); r.c.pkg.forEach(a => pickA.add(a.id)); pickB.add(r.c.x.p.id);
+    renderList(tA, document.getElementById('lA'), pickA, document.getElementById('sA'));
+    renderList(tB, document.getElementById('lB'), pickB, document.getElementById('sB'));
+    renderVerdicts();
+    document.getElementById('calc').scrollIntoView({behavior: 'smooth', block: 'start'});
+  }));
+}
+document.getElementById('fGo').addEventListener('click', findTrades);
+
 // ---------- league view ----------
 function renderLeague() {
   const n = L.teams.length;
@@ -1085,7 +1218,7 @@ function openPlayer(id) {
   const sn = shareName(p);
   const hz = ['Rest of 2026', '2027', '2028', '2029', '2030', '2031'];
   document.getElementById('pvBody').innerHTML = `
-    <div class="pv-head"><div><h2 id="pvName">${esc(p.n)}${injTag(p)}</h2><p class="lede keep">${p.p} · ${esc(p.t || 'Free agent')} · ${p.age != null ? p.age.toFixed(1) : '—'} yrs · ${p.o === 'Free agent' ? 'Free agent' : `<button type="button" class="tname sm" data-team="${esc(p.o)}">${esc(p.o)}</button>`}</p></div>
+    <div class="pv-head"><div><h2 id="pvName">${esc(p.n)}${injTag(p)}</h2><p class="lede keep"><span class="rk">${rankTxt(p)}</span> · ${esc(p.t || 'Free agent')} · ${p.age != null ? p.age.toFixed(1) : '—'} yrs · ${p.o === 'Free agent' ? 'Free agent' : `<button type="button" class="tname sm" data-team="${esc(p.o)}">${esc(p.o)}</button>`}</p></div>
       <button type="button" class="pv-close" id="pvClose">Close</button></div>
     ${p.ol ? `<p><span class="chip ${p.ol.kind}">${OL_LABEL[p.ol.kind]}</span> ${esc(p.ol.text)}</p>` : ''}
     <div class="stats">
@@ -1379,7 +1512,7 @@ function show() {
 }
 function renderAll() {
   if (!L) return;
-  fillOwner(pOwner); renderTeam(); renderPlayers(); renderLeague(); renderPicks(); renderSignals(); renderMethod();
+  fillOwner(pOwner); finderControls(); if (!fResults) renderFinder(); renderTeam(); renderPlayers(); renderLeague(); renderPicks(); renderSignals(); renderMethod();
   if (tradeReady) { const a = tA.value, b = tB.value; teamOptions(tA, a); teamOptions(tB, b); }
 }
 window.addEventListener('hashchange', show);
