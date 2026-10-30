@@ -202,6 +202,12 @@ thead th { cursor: pointer; user-select: none; } thead th:hover { color: var(--i
 th.s-asc::after { content: " ↑"; } th.s-desc::after { content: " ↓"; }
 td.heat { text-align: center; min-width: 46px; font-size: 12px; }
 .chart .hitr { fill: transparent; } .chart .hitr:hover { fill: var(--ink); fill-opacity: .06; }
+
+/* first column stays put while a wide table scrolls sideways */
+.tw th:first-child, .tw td:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; box-shadow: 1px 0 0 var(--line); }
+.tw thead th:first-child { z-index: 3; }
+.tw th { z-index: 2; }
+@media (max-width: 600px) { .tw td:first-child, .tw th:first-child { max-width: 48vw; white-space: normal; } .tw td:first-child .pos { margin-right: 3px; } .tw td:first-child .pl .meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } }
 </style>
 
 <header class="top">
