@@ -261,6 +261,15 @@ body.compact dialog.pv { width: 100vw; max-width: 100vw; max-height: 100dvh; hei
 .hs-t { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; font-size: 13px; }
 .hs-t .mut { font-size: 11px; }
 .hs-c { height: 26px; line-height: 26px; text-align: center; font-size: 11px; font-variant-numeric: tabular-nums; border-radius: 3px; color: var(--ink); }
+
+/* phone cards: key fields only until tapped; long lists scroll in their own box */
+body.compact .tw tr.hasmore:not(.open) td.lo { display: none; }
+body.compact .tw tr.hasmore { cursor: pointer; position: relative; }
+body.compact .tw tr.hasmore::after { content: "more ▾"; position: absolute; right: 10px; top: 10px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--muted); }
+body.compact .tw tr.hasmore.open::after { content: "less ▴"; }
+body.compact .tw.tall { max-height: 72vh; overflow-y: auto; overscroll-behavior: contain; border-radius: var(--r); }
+body.compact .tw tr { padding: 8px 10px; gap: 6px 10px; margin-bottom: 6px; }
+body.compact .tw td { font-size: 12.5px; }
 </style>
 
 <header class="top">
@@ -1241,10 +1250,27 @@ document.addEventListener('click', e => {
   const dir = cur && cur.i === i ? -cur.dir : (typeof sample === 'string' ? 1 : -1);
   sortState.set(k, {i, dir}); tbl.tBodies[0].dataset.sorted = ''; sortTable(tbl);
 });
+// on phones each card shows the most useful fields first; the rest open with a tap
+const CARD_KEYS = ['You send', 'From', 'Your gain', 'Market: get / send', 'Why', 'Owner', 'Pick owner', 'Record', 'Playoffs', 'Projected finish',
+  'Value to you', 'Value to them', 'Contender', 'Rebuilder', 'Market', 'Trend', 'Rest of 2026', 'Expected PPG', 'Signal',
+  'Hit rate', 'Star', 'Bust', '3-year PPG', 'Trend per year', 'Projected slot', 'Picks', 'Firsts', 'Now value', 'Future value', 'Slot', ''];
+const CARD_MAX = 6;
 function labelTable(t) {
   const hs = [...t.querySelectorAll('thead th')].map(th => th.textContent.replace(/[↑↓]/g, '').trim());
   if (!hs.length || !t.tBodies[0]) return;
-  for (const tr of t.tBodies[0].rows) [...tr.cells].forEach((td, i) => { if (hs[i] && td.dataset.label !== hs[i]) td.dataset.label = hs[i]; });
+  const idx = hs.map((h, i) => i).slice(1);
+  const ranked = idx.filter(i => CARD_KEYS.includes(hs[i])).sort((a, b) => CARD_KEYS.indexOf(hs[a]) - CARD_KEYS.indexOf(hs[b]));
+  const keep = new Set(ranked.slice(0, CARD_MAX).concat(idx.filter(i => hs[i] === '')));
+  for (const i of idx) if (keep.size < CARD_MAX && !keep.has(i)) keep.add(i);
+  for (const tr of t.tBodies[0].rows) {
+    let lo = 0;
+    [...tr.cells].forEach((td, i) => {
+      if (hs[i] && td.dataset.label !== hs[i]) td.dataset.label = hs[i];
+      const isLo = i > 0 && !keep.has(i) && !td.hasAttribute('colspan');
+      td.classList.toggle('lo', isLo); if (isLo) lo++;
+    });
+    tr.classList.toggle('hasmore', lo > 0);
+  }
   const tw = t.closest('.tw');
   if (tw && !(tw.previousElementSibling && tw.previousElementSibling.classList.contains('msort')) && hs.length > 2) {
     const d = document.createElement('div'); d.className = 'msort';
@@ -1258,6 +1284,10 @@ function labelTable(t) {
 new MutationObserver(() => document.querySelectorAll('main table').forEach(t => { labelTable(t); if (sortState.has(tKey(t))) sortTable(t); }))
   .observe(document.querySelector('main'), {childList: true, subtree: true});
 
+document.addEventListener('click', e => {
+  if (!document.body.classList.contains('compact') || e.target.closest('button, a, input, select, label, .pname, .tname')) return;
+  const tr = e.target.closest('.tw tbody tr.hasmore'); if (tr) tr.classList.toggle('open');
+});
 // team links anywhere
 document.addEventListener('click', e => {
   const b = e.target.closest('.tname'); if (!b) return;
