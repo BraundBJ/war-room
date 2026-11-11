@@ -28,7 +28,9 @@ if [ "$MODE" = light ]; then
   for w in $(seq 1 17); do curl -sSf -A war-room -o "matchups_$w.json" "$A/league/$L/matchups/$w"; done
   curl -sSfL --retry 3 -o "$S/raw/fantasycalc.json" "https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=1&numTeams=12&ppr=1" || echo "market values unavailable"
   cd "$S"
+  curl -sSfL --retry 3 -o "$S/raw/games.csv.tmp" https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv && mv "$S/raw/games.csv.tmp" "$S/raw/games.csv" || echo "schedule unavailable"
   python3 injury_returns.py raw features.parquet "$R/players_nfl.json" "$IDS" proj/injury_outlook.json
+  [ -s proj/week_model.pkl ] && python3 week_proj.py predict proj raw/games.csv "$R/players_nfl.json" "$IDS" || echo "no weekly model yet"
   python3 value.py proj/projections_2026.csv features.parquet "$IDS" "$R/league_${L}_rosters.json" "$R/league_${L}_users.json" proj/actual_values.csv
   python3 team_value.py proj/actual_values.csv proj/actual_values_settings.json "$R/league_${L}_rosters.json" "$R/league_${L}_users.json" proj
   python3 picks_value.py proj/picks.json
@@ -49,6 +51,7 @@ if [ "${SKIP_DOWNLOAD:-0}" != 1 ]; then
     get "$B/depth_charts/depth_charts_$y.csv" "depth_$y.csv" $f
   done
   get "$B/players/players.csv" players.csv fresh
+  get https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv games.csv fresh
   get https://raw.githubusercontent.com/dynastyprocess/data/master/files/db_playerids.csv "$IDS" fresh
   cd "$R"; A=https://api.sleeper.app/v1
   for p in league/$L league/$L/users league/$L/rosters league/$L/traded_picks league/$L/drafts state/nfl; do
@@ -70,8 +73,11 @@ json.dump({"week": w}, open(f"{S}/week.json", "w")); print("week", w)
 PY
 
 python3 build_features.py raw features.parquet
+python3 weekly_data.py raw raw/games.csv weekly_rows.parquet
+python3 week_proj.py train weekly_rows.parquet proj
 python3 score_2026.py features.parquet "$IDS" "$R/league_${L}_rosters.json" "$R/league_${L}_users.json" results/scores_2026.csv
 python3 injury_returns.py raw features.parquet "$R/players_nfl.json" "$IDS" proj/injury_outlook.json
+python3 week_proj.py predict proj raw/games.csv "$R/players_nfl.json" "$IDS"
 python3 project.py features.parquet raw/players.csv proj
 python3 extend_horizons.py features.parquet raw/players.csv proj/projections_2026.csv
 python3 -W ignore age_cliffs.py raw proj/projections_2026.csv
