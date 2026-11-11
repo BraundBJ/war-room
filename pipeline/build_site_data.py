@@ -6,6 +6,7 @@ import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 from wrconf import ROOT, SEASON, WEEK, REST, LATE_MIN, BACK_BY, LAST_WEEK, PLAYOFF  # noqa: E402
 import datetime
+import os
 import glob
 import json
 import sys
@@ -163,7 +164,8 @@ _lg = json.load(open(f"{LG}/league_{LID}.json"))
 _mu = {}
 for f in glob.glob(f"{LG}/matchups_*.json"):
     w = int(f.split("_")[-1].split(".")[0])
-    _mu[w] = [[m["roster_id"], m.get("matchup_id"), round(m.get("points") or 0, 2)] for m in (json.load(open(f)) or [])]
+    _mu[w] = [[m["roster_id"], m.get("matchup_id"), round(m.get("points") or 0, 2), [x for x in (m.get("starters") or []) if x and x != "0"]]
+              for m in (json.load(open(f)) or [])]
 raw = {"league": {"league_id": LID, "name": _lg.get("name"), "total_rosters": _lg.get("total_rosters"),
                   "roster_positions": _lg.get("roster_positions"), "season": _lg.get("season"),
                   "settings": {k: (_lg.get("settings") or {}).get(k) for k in ("playoff_week_start", "playoff_teams", "draft_rounds", "num_teams")},
@@ -195,6 +197,8 @@ data = {
     # rookie slot study (rookie/scripts/build_study_site.py) for the Draft study tab
     "study": json.load(open(ROOT + "/rookie/results/site_study.json")),
     "raw": raw, "market": market,
+    # next week's projections (week_proj.py): sleeper id -> projection if he plays, play chance, expected, floor, ceiling
+    "week": json.load(open(ROOT + "/stats/proj/week_proj.json")) if os.path.exists(ROOT + "/stats/proj/week_proj.json") else None,
 }
 json.dump(data, open(OUT, "w"), separators=(",", ":"))
 print(len(players), "players", len(teams), "teams", len(log), "trades", round(len(json.dumps(data)) / 1024), "KB")

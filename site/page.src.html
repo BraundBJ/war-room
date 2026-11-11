@@ -304,6 +304,7 @@ body.compact .tw td { font-size: 12.5px; }
     <div class="navrow">
     <nav class="tabs" aria-label="Views">
       <a href="#team" data-tab="team">Team</a>
+      <a href="#week" data-tab="week">This week</a>
       <a href="#players" data-tab="players">Players</a>
       <a href="#trade" data-tab="trade">Trade</a>
       <a href="#league" data-tab="league">League</a>
@@ -319,6 +320,7 @@ body.compact .tw td { font-size: 12.5px; }
 
 <main class="wrap">
   <section class="view" id="v-team"></section>
+  <section class="view" id="v-week" hidden></section>
 
   <section class="view" id="v-players" hidden>
     <div><h2>Every player</h2><p class="lede">Projections and values for every QB, RB, WR and TE with a 2026 projection. Value to the team you're viewing as is lineup points added (or lost), weighted for that team's mode.</p></div>
@@ -769,7 +771,7 @@ async function fetchLeagueRaw(id) {
   const mus = await Promise.all(weeks.map(w => getJ(`${API}/league/${id}/matchups/${w}`).catch(() => [])));
   const txs = await Promise.all(Array.from({length: 19}, (_, w) => getJ(`${API}/league/${id}/transactions/${w}`).catch(() => [])));
   return {league: lg, users, rosters, traded_picks: tp,
-    matchups: Object.fromEntries(weeks.map((w, i) => [w, (mus[i] || []).map(m => [m.roster_id, m.matchup_id, m.points || 0])])), tx: txs.flat()};
+    matchups: Object.fromEntries(weeks.map((w, i) => [w, (mus[i] || []).map(m => [m.roster_id, m.matchup_id, m.points || 0, (m.starters || []).filter(x => x && x !== '0')])])), tx: txs.flat()};
 }
 function setLeague(raw, {isDefault = false, live = false, meUid = null} = {}) {
   const lg = raw.league, st = lg.settings || {}, sc = lg.scoring_settings || {};
@@ -907,6 +909,74 @@ function renderTeam() {
         ${filler.length ? `<div class="tw"><table data-key="filler"><thead><tr><th>Player</th><th>2026 PPG</th><th>Contender</th><th>Rebuilder</th><th>Market</th></tr></thead><tbody>${filler.map(r => `<tr>${plCell(r.p)}<td>${f1(r.p.ppg)}</td><td>${f0(r.p.c)}</td><td>${f0(r.p.rb)}</td><td>${f0(r.p.mv)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">Every projected player on this roster would start at some point.</p>'}</div>
     </div>`;
   const b = document.getElementById('backMine'); if (b) b.addEventListener('click', () => { TEAMVIEW = ME; renderTeam(); });
+}
+
+// ---------- this week: next-week projections, start/sit and matchups ----------
+const WK = D.week || null;
+const wp = id => (WK && WK.players[id]) || null;
+const SLOT_NAMES = {QB: 'QB', RB: 'RB', WR: 'WR', TE: 'TE', FLEX: 'FLEX', SUPER_FLEX: 'SF', REC_FLEX: 'W/T', WRRB_FLEX: 'W/R'};
+// best legal lineup by expected points: fixed slots first, then flex groups narrowest first
+function bestLineup(ids) {
+  const ps = ids.map(id => ({id, p: P[byId.get(id)], w: wp(id)})).filter(x => x.p && x.w).sort((a, b) => b.w.x - a.w.x);
+  const used = new Set(), slots = [];
+  for (const pos of POS4) for (let k = 0; k < L.def.fixed[pos]; k++) {
+    const c = ps.find(x => !used.has(x.id) && x.p.p === pos); slots.push({slot: pos, x: c || null}); if (c) used.add(c.id);
+  }
+  for (const g of L.def.flex) { const nm = SLOT_NAMES[g.type] || 'FLEX'; for (let k = 0; k < g.n; k++) {
+    const c = ps.find(x => !used.has(x.id) && g.pos.has(x.p.p)); slots.push({slot: nm, x: c || null}); if (c) used.add(c.id);
+  } }
+  return {slots, bench: ps.filter(x => !used.has(x.id))};
+}
+const sdOf = w => Math.max(1, ((w.hi || w.p) - (w.lo || 0)) / 2.56) * Math.sqrt(Math.max(w.pl, 0.05));
+const lineupStats = ids => { let m = 0, v = 0; ids.forEach(id => { const w = wp(id); if (w) { m += w.x; v += sdOf(w) ** 2 + w.p * w.p * w.pl * (1 - w.pl); } }); return {m, sd: Math.sqrt(v)}; };
+const winP = (a, b) => Phi((a.m - b.m) / Math.sqrt(a.sd ** 2 + b.sd ** 2 || 1));
+const oppTxt = w => w.bye ? '<span class="chip">Bye</span>' : `${w.h ? 'vs' : '@'} ${esc(w.opp)}`;
+const statusChip = w => !w.st ? '' : `<span class="inj ${w.st === 'Questionable' ? 'q' : ''}">${w.st === 'Questionable' ? 'Q' : esc(w.st)}</span>`;
+let wkPos = '';
+function renderWeek() {
+  const el = document.getElementById('v-week');
+  if (!WK) { el.innerHTML = '<div><h2>This week</h2></div><p class="empty">Weekly projections arrive with the next build.</p>'; return; }
+  const me = L.teamBy.get(ME), mu = (L.matchups || {})[WK.week] || [];
+  const byRid = new Map(mu.map(m => [m[0], m]));
+  const mine = byRid.get(me.rid), oppRid = mine && mu.find(m => m[1] != null && m[1] === mine[1] && m[0] !== me.rid);
+  const opp = oppRid ? L.byRid.get(oppRid[0]) : null;
+  const bl = bestLineup(me.roster), blIds = bl.slots.filter(s => s.x).map(s => s.x.id);
+  const set = mine && mine[3] && mine[3].length ? mine[3] : null;
+  const myBest = lineupStats(blIds), mySet = set ? lineupStats(set) : null;
+  const oBest = opp ? lineupStats(bestLineup(opp.roster).slots.filter(s => s.x).map(s => s.x.id)) : null;
+  const oSetIds = oppRid && oppRid[3] && oppRid[3].length ? oppRid[3] : null, oSet = oSetIds ? lineupStats(oSetIds) : oBest;
+  // start/sit: who in the set lineup the best lineup would bench, and who it would start
+  const swapsOut = set ? set.filter(id => !blIds.includes(id)) : [], swapsIn = set ? blIds.filter(id => !set.includes(id)) : [];
+  const row = (slot, x) => { if (!x) return `<tr><td class="l"><b>${slot}</b></td><td colspan="5" class="mut l">Empty: no projected player for this slot</td></tr>`;
+    const w = x.w, p = x.p;
+    return `<tr><td data-s="${slot}"><span class="pl"><span class="pos">${slot}</span><button type="button" class="pname" data-pid="${p.id}">${esc(p.n)}</button>${statusChip(w)}<span class="meta">${p.p} · ${esc(p.t || 'FA')} ${oppTxt(w)}${w.it != null ? ` · team total ${f1(w.it)}` : ''}</span></span></td>
+      <td data-v="${w.x}"><b>${f1(w.x)}</b></td><td>${f1(w.lo)}–${f1(w.hi)}</td><td>${pct(w.pl)}</td><td>${w.oa ? (w.oa >= 1.08 ? '<span class="num-good">soft</span>' : w.oa <= 0.92 ? '<span class="num-bad">tough</span>' : 'avg') : '—'}</td><td>${f1(p.proj[0])}</td></tr>`; };
+  const others = L.teams.map(t => t.rid).filter(r => r !== me.rid);
+  const pairs = [], seen = new Set();
+  mu.forEach(m => { if (m[1] == null || seen.has(m[1])) return; const o = mu.find(x => x[1] === m[1] && x[0] !== m[0]); if (!o) return; seen.add(m[1]); pairs.push([m, o]); });
+  const teamProj = m => { const t = L.byRid.get(m[0]); if (!t) return null; const ids = m[3] && m[3].length ? m[3] : bestLineup(t.roster).slots.filter(s => s.x).map(s => s.x.id); return {t, s: lineupStats(ids), set: !!(m[3] && m[3].length)}; };
+  const rows = P.filter(p => wp(p.id) && POSF(wkPos, p) && (wp(p.id).x > 0.5 || p.o !== 'Free agent')).sort((a, b) => wp(b.id).x - wp(a.id).x).slice(0, 400);
+  el.innerHTML = `
+    <div><h2>Week ${WK.week}</h2><p class="lede keep">Lines posted for ${WK.linesPosted} of ${WK.games} games · injuries as of ${esc((M.refreshed || M.built).replace('T', ' ').replace('Z', ' UTC'))}</p></div>
+    ${opp ? `<div class="stats">
+      <div class="stat"><div class="k">${esc(me.label)}</div><div class="v">${f1(mySet ? mySet.m : myBest.m)}</div><div class="s">${mySet ? `your set lineup · best lineup ${f1(myBest.m)}` : 'best lineup'}</div></div>
+      <div class="stat"><div class="k">${esc(opp.label)}</div><div class="v">${f1(oSet.m)}</div><div class="s">${oSetIds ? 'their set lineup' : 'their best lineup'}</div></div>
+      <div class="stat"><div class="k">Win chance</div><div class="v ${winP(mySet || myBest, oSet) >= 0.5 ? 'num-good' : 'num-bad'}">${pct(winP(mySet || myBest, oSet))}</div><div class="s">${mySet && myBest.m - mySet.m > 0.5 ? `${pct(winP(myBest, oSet))} with the best lineup` : 'with your current lineup'}</div></div>
+    </div>` : ''}
+    ${swapsIn.length ? `<div class="panel"><h3>Lineup changes</h3><p class="keep">${swapsIn.map((id, i) => { const a = P[byId.get(id)], b = swapsOut[i] && P[byId.get(swapsOut[i])]; return `Start <b>${esc(a.n)}</b> (${f1(wp(id).x)})${b ? ` over <b>${esc(b.n)}</b> (${f1((wp(b.id) || {x: 0}).x)})` : ''}`; }).join('<br>')}</p></div>` : (set ? '<div class="panel"><p class="keep">Your set lineup is already your best projected lineup.</p></div>' : '')}
+    <div class="panel"><h3>Best lineup</h3><div class="tw"><table data-key="wk-lineup"><thead><tr><th>Player</th><th>Expected</th><th>Floor–ceiling</th><th>Plays</th><th>Matchup</th><th>Season PPG proj</th></tr></thead><tbody>
+      ${bl.slots.map(s => row(s.slot, s.x)).join('')}${bl.bench.slice(0, 8).map(x => row('BN', x)).join('')}</tbody></table></div>
+      <div class="legend"><span>Expected = projection if he plays × chance he plays</span><span>Floor–ceiling: 10th to 90th percentile</span><span>Matchup: points the opponent allows to his position vs league average</span></div></div>
+    <div class="panel"><h3>League matchups</h3><div class="tw"><table data-key="wk-matchups"><thead><tr><th>Team</th><th>Projected</th><th>Win chance</th><th>Opponent</th><th>Projected</th></tr></thead><tbody>
+      ${pairs.map(([a, b]) => { const A = teamProj(a), B = teamProj(b); if (!A || !B) return ''; const pA = winP(A.s, B.s);
+        return `<tr>${teamCell(A.t.name)}<td data-v="${A.s.m}"><b>${f1(A.s.m)}</b>${A.set ? '' : ' <span class="mut">best</span>'}</td><td data-v="${pA}"><b class="${pA >= 0.5 ? 'num-good' : ''}">${pct(pA)}</b> / ${pct(1 - pA)}</td>${teamCell(B.t.name)}<td data-v="${B.s.m}"><b>${f1(B.s.m)}</b>${B.set ? '' : ' <span class="mut">best</span>'}</td></tr>`; }).join('') || '<tr><td colspan="5" class="empty">No matchups found for this week.</td></tr>'}</tbody></table></div>
+      <div class="legend"><span>Projected: each team's set lineup on Sleeper ("best" when none is set yet)</span></div></div>
+    <div class="panel"><h3>Every player, week ${WK.week}</h3>
+      <div class="controls"><div class="seg" id="wkPos" role="group" aria-label="Position">${['', 'QB', 'RB', 'WR', 'TE', 'FLEX'].map(v => `<button type="button" data-v="${v}" aria-pressed="${wkPos === v}">${v || 'All'}</button>`).join('')}</div></div>
+      <div class="tw tall"><table data-key="wk-all"><thead><tr><th>Player</th><th class="l">Owner</th><th>Expected</th><th>If he plays</th><th>Floor–ceiling</th><th>Plays</th><th>Opponent</th><th>Team total</th><th>Matchup</th></tr></thead><tbody>
+      ${rows.map(p => { const w = wp(p.id); return `<tr>${plCell(p)}${ownerCell(p)}<td data-v="${w.x}"><b>${f1(w.x)}</b>${statusChip(w)}</td><td>${f1(w.p)}</td><td data-v="${w.hi}">${f1(w.lo)}–${f1(w.hi)}</td><td data-v="${w.pl}">${pct(w.pl)}</td><td class="l">${oppTxt(w)}</td><td>${w.it != null ? f1(w.it) : '—'}</td><td data-v="${w.oa}" class="${w.oa >= 1.08 ? 'num-good' : w.oa <= 0.92 ? 'num-bad' : ''}">${sg(w.oa * 100 - 100)}%</td></tr>`; }).join('')}</tbody></table></div>
+      <div class="legend"><span>Held-out average miss: ${WK.mae} points per player-game</span><span>Matchup %: how much more (+) or less (−) the opponent allows to the position than average</span></div></div>`;
+  el.querySelectorAll('#wkPos button').forEach(b => b.addEventListener('click', () => { wkPos = b.dataset.v; renderWeek(); }));
 }
 
 // ---------- players view ----------
@@ -1687,7 +1757,7 @@ function renderStudy() {
 }
 
 // ---------- routing ----------
-const TABS = ['team', 'players', 'trade', 'league', 'picks', 'study', 'signals', 'method'];
+const TABS = ['team', 'week', 'players', 'trade', 'league', 'picks', 'study', 'signals', 'method'];
 function show() {
   const tab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'team';
   TABS.forEach(t => { document.getElementById('v-' + t).hidden = t !== tab; });
@@ -1696,7 +1766,7 @@ function show() {
 }
 function renderAll() {
   if (!L) return;
-  fillOwner(pOwner); finderControls(); if (!fResults) renderFinder(); renderTeam(); renderPlayers(); renderLeague(); renderPicks(); renderSignals(); renderMethod();
+  fillOwner(pOwner); finderControls(); if (!fResults) renderFinder(); renderTeam(); renderWeek(); renderPlayers(); renderLeague(); renderPicks(); renderSignals(); renderMethod();
   if (tradeReady) { const a = tA.value, b = tB.value; teamOptions(tA, a); teamOptions(tB, b); }
 }
 window.addEventListener('hashchange', show);
