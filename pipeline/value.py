@@ -54,12 +54,26 @@ import os
 _io = json.load(open(os.path.join(os.path.dirname(PROJ), "injury_outlook.json")))
 _ids = pd.read_csv(IDMAP, low_memory=False).dropna(subset=["sleeper_id", "gsis_id"])
 _g2s = dict(zip(_ids.gsis_id, _ids.sleeper_id.astype(int).astype(str)))
-def _cap(row):
+def _inj(row):
+    """Rest-of-season adjustment for a current injury: (healthy chance, games if healthy, PPG)."""
     st = _io["status"].get(_g2s.get(row.player_id))
-    if not st or st["kind"] == "q":
-        return row.phealthy0
-    return min(row.phealthy0, st["back"].get(str(BACK_BY), 0.0))
-P["phealthy0"] = P.apply(_cap, axis=1)
+    ph, g, ppg = row.phealthy0, row.games0, row.ppg0
+    if not st or REST <= 0:
+        return ph, g, ppg
+    back = [st["back"].get(str(w), 1.0) for w in range(WEEK + 1, LAST_WEEK + 1)]
+    avail = sum(back) / len(back)          # share of the remaining weeks he's expected to be available
+    if st["kind"] == "q":
+        # next game only: 73% he plays, and if he does he scores qmult x his usual
+        g = g * avail
+        ppg = ppg * (REST - 1 + (st.get("qmult") or 0.86)) / REST
+        return ph, g, ppg
+    by = st["back"].get(str(BACK_BY), 0.0)
+    ph_new = min(ph, by)
+    # given a healthy rest of season (back by BACK_BY), the games he still plays
+    g_new = min(g, g * avail / max(by, 1e-6)) if by > 0 else 0.0
+    return ph_new, g_new, ppg
+_adj = P.apply(_inj, axis=1, result_type="expand")
+P["phealthy0"], P["games0"], P["ppg0"] = _adj[0], _adj[1], _adj[2]
 r = P.pos.map(repl)
 Z90 = 1.2816  # normal 90th percentile
 for h in range(6):

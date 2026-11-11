@@ -187,7 +187,7 @@ except FileNotFoundError:
     pass
 
 data = {
-    "meta": {"built": datetime.date.today().isoformat(), "throughWeek": WEEK, "restWeeks": REST, "season": 2026,
+    "meta": {"built": datetime.date.today().isoformat(), "refreshed": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%MZ"), "throughWeek": WEEK, "restWeeks": REST, "season": 2026,
              "repl": settings["replacement_ppg"], "wC": settings["w_contender"], "wR": settings["w_rebuilder"],
              "cv": cv[["position", "horizon", "r2_calibrated", "auc_healthy", "resid_sd"]].to_dict("records"),
              "me": "BraundJB", "leagueId": LID, "scale": SCALE, "scaleC": SC_C, "scaleR": SC_R},
