@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Weekly War Room build: download data, rerun the model, write site/index.html.
 # Usage: WR_ROOT=/path/to/work ./run.sh      (WR_WEEK=N to force a week; SKIP_DOWNLOAD=1 to reuse data)
+#        MODE=light ./run.sh   reuse the last weekly model (work/stats from cache); refresh only Sleeper data
+#                              (injuries, rosters, schedule), market values, and everything valued from them
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")" && pwd)"
 export WR_ROOT="${WR_ROOT:-$REPO/work}"
@@ -13,6 +15,28 @@ cp "$REPO/data/rookie_by_slot.csv" "$WR_ROOT/rookie/results/by_slot.csv"
 cp "$REPO/data/site_study.json" "$WR_ROOT/rookie/results/"
 
 get() { [ -s "$2" ] && [ "${3:-}" != fresh ] && return 0; curl -sSfL --retry 3 -o "$2.tmp" "$1" && mv "$2.tmp" "$2" || { rm -f "$2.tmp"; echo "skip $1"; }; }
+MODE="${MODE:-full}"
+if [ "$MODE" = light ] && [ ! -s "$S/proj/projections_2026.csv" -o ! -s "$S/features.parquet" -o ! -s "$S/week.json" ]; then
+  echo "no cached weekly model: running the full build"; MODE=full
+fi
+if [ "$MODE" = light ]; then
+  cd "$R"; A=https://api.sleeper.app/v1
+  for p in league/$L league/$L/users league/$L/rosters league/$L/traded_picks league/$L/drafts state/nfl; do
+    curl -sSf -A war-room -o "$(echo $p | tr / _).json" "$A/$p"; done
+  curl -sSf -A war-room -o players_nfl.json "$A/players/nfl"
+  for w in $(seq 0 18); do curl -sSf -A war-room -o "tx_$w.json" "$A/league/$L/transactions/$w"; done
+  for w in $(seq 1 17); do curl -sSf -A war-room -o "matchups_$w.json" "$A/league/$L/matchups/$w"; done
+  curl -sSfL --retry 3 -o "$S/raw/fantasycalc.json" "https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=1&numTeams=12&ppr=1" || echo "market values unavailable"
+  cd "$S"
+  python3 injury_returns.py raw features.parquet "$R/players_nfl.json" "$IDS" proj/injury_outlook.json
+  python3 value.py proj/projections_2026.csv features.parquet "$IDS" "$R/league_${L}_rosters.json" "$R/league_${L}_users.json" proj/actual_values.csv
+  python3 team_value.py proj/actual_values.csv proj/actual_values_settings.json "$R/league_${L}_rosters.json" "$R/league_${L}_users.json" proj
+  python3 picks_value.py proj/picks.json
+  python3 build_site_data.py "$WR_ROOT/site/data.json"
+  python3 "$REPO/assemble.py" "$WR_ROOT" "$REPO"
+  exit 0
+fi
+
 if [ "${SKIP_DOWNLOAD:-0}" != 1 ]; then
   B=https://github.com/nflverse/nflverse-data/releases/download
   cd "$S/raw"

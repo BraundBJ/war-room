@@ -2,12 +2,18 @@ name: Weekly War Room update
 
 on:
   schedule:
-    - cron: "17 14 * * 2"   # every Tuesday 14:17 UTC (10:17 am Eastern during the season)
+    - cron: "17 14 * * 2"   # full rebuild: every Tuesday 14:17 UTC (9:17-10:17 am Eastern)
+    - cron: "37 13 * * *"   # light refresh (injuries, rosters, market): daily ~8:37 am Eastern
+    - cron: "37 22 * * *"   # light refresh: daily ~5:37 pm Eastern
   push:                      # rebuild when the code changes
     branches: [main]
     paths: ["pipeline/**", "site/**", "data/**", "run.sh", "requirements.txt", ".github/workflows/**"]
   workflow_dispatch:         # "Run workflow" button on the Actions tab
     inputs:
+      mode:
+        description: "full (retrain) or light (injuries, rosters, market only)"
+        required: false
+        default: full
       week:
         description: "Force a week (leave blank to use the latest completed week)"
         required: false
@@ -37,11 +43,42 @@ jobs:
         with:
           path: work/stats/raw
           key: nfl-raw-v1
+      - name: Pick mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = schedule ] && [ "${{ github.event.schedule }}" != "17 14 * * 2" ]; then echo "mode=light" >> "$GITHUB_OUTPUT";
+          elif [ "${{ inputs.mode }}" = light ]; then echo "mode=light" >> "$GITHUB_OUTPUT";
+          else echo "mode=full" >> "$GITHUB_OUTPUT"; fi
+      # the last weekly model (features, projections, stat results), for light refreshes
+      - uses: actions/cache/restore@v4
+        if: steps.mode.outputs.mode == 'light'
+        with:
+          path: |
+            work/stats/features.parquet
+            work/stats/features_weekly.parquet
+            work/stats/week.json
+            work/stats/proj
+            work/stats/results
+            work/rookie/raw
+          key: model-none
+          restore-keys: model-
       - name: Build
         env:
           WR_ROOT: ${{ github.workspace }}/work
           WR_WEEK: ${{ inputs.week }}
+          MODE: ${{ steps.mode.outputs.mode }}
         run: ./run.sh
+      - uses: actions/cache/save@v4
+        if: steps.mode.outputs.mode == 'full'
+        with:
+          path: |
+            work/stats/features.parquet
+            work/stats/features_weekly.parquet
+            work/stats/week.json
+            work/stats/proj
+            work/stats/results
+            work/rookie/raw
+          key: model-${{ github.run_id }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: public

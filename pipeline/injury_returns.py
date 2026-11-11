@@ -89,11 +89,27 @@ SPL = json.load(open(SP))
 remaining = list(range(CUR_WEEK + 1, LAST_WEEK + 1))  # team games left, byes ignored
 
 
+# Questionable players, from Brady's study of 1,228 games (2016 to week 8 of 2026, players averaging 8+ PPG):
+# 73% suit up; if they play they score 0.86x their healthy average (hamstring 0.80, ankle 0.83, knee 0.85,
+# TE any injury 0.79, cleared concussion 1.00). Did-not-practice Friday: 52% play, 0.77x.
+Q_PLAY = 0.73
+Q_MULT = {"hamstring": 0.80, "ankle": 0.83, "knee": 0.85, "concussion": 1.00}
+
+
+def q_mult(body, pos):
+    c = cat(body)
+    if c == "concussion":
+        return 1.00
+    m = Q_MULT.get(c, 0.86)
+    return min(m, 0.79) if pos == "TE" else m
+
+
 def p_back_by(status, body, notes, missed):
     """P(back for the game in week w) for each remaining week."""
     c = cat(body)
     if status == "Questionable":
-        return {w: 0.8 for w in remaining}, "q"
+        # Questionable study (nflverse 2016-2026): 73% play; only the next game is in doubt
+        return {w: (Q_PLAY if i == 0 else 1.0) for i, w in enumerate(remaining)}, "q"
     if c == "season" or (status == "IR" and "surgery" in str(notes).lower() and "knee" in str(body).lower()):
         return {w: 0.0 for w in remaining}, "season"
     S = SURV.get(c, SURV["other"])
@@ -119,6 +135,7 @@ for sid, d in SPL.items():
         probs, kind = p_back_by(st, d.get("injury_body_part"), d.get("injury_notes"), missed if pd.notna(missed) else CUR_WEEK)
         likely = next((w for w in remaining if probs[w] >= 0.5), None)
         status[sid] = {"status": st, "body": d.get("injury_body_part"), "kind": kind, "back": probs,
+                       "qmult": q_mult(d.get("injury_body_part"), d.get("position")) if kind == "q" else None,
                        "likelyWeek": likely, "pPlayoffs": round(probs.get(max(PLAYOFF, CUR_WEEK + 1), 0.0), 2), "name": d.get("full_name"),
                        "team": d.get("team"), "pos": d.get("position")}
 

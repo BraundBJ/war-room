@@ -270,6 +270,19 @@ body.compact .tw tr.hasmore.open::after { content: "less ▴"; }
 body.compact .tw.tall { max-height: 72vh; overflow-y: auto; overscroll-behavior: contain; border-radius: var(--r); }
 body.compact .tw tr { padding: 8px 10px; gap: 6px 10px; margin-bottom: 6px; }
 body.compact .tw td { font-size: 12.5px; }
+
+/* raw-value calculator */
+.calchead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.calchead h3 { margin: 0; }
+.rsug { display: grid; gap: 2px; } .rsug:empty { display: none; }
+.rsg, .ritem { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 7px 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font: inherit; font-size: 13px; color: var(--ink); text-align: left; }
+.rsg { cursor: pointer; } .rsg:hover { border-color: var(--accent); }
+.ritem { grid-template-columns: auto 1fr auto auto; margin-top: 4px; }
+.rsg .meta, .ritem .meta { display: block; font-size: 11px; color: var(--muted); }
+.rsg .vv, .ritem .vv { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.rx { font: inherit; font-size: 16px; line-height: 1; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 2px 6px; }
+.rx:hover { color: var(--bad); }
+.rlist { display: grid; }
 </style>
 
 <header class="top">
@@ -335,8 +348,16 @@ body.compact .tw td { font-size: 12.5px; }
         <label class="fl">Your gain from <input type="number" id="fGmin" class="num" placeholder="any" step="250" aria-label="Minimum gain"> to <input type="number" id="fGmax" class="num" placeholder="any" step="250" aria-label="Maximum gain"></label>
       </div>
       <div id="fOut"></div></div>
-    <h3 id="calc">Trade calculator</h3>
-    <div class="trade">
+    <div class="calchead"><h3 id="calc">Trade calculator</h3>
+      <div class="seg" id="calcMode" role="group" aria-label="Calculator mode"><button type="button" data-v="team" aria-pressed="true">For two teams</button><button type="button" data-v="raw" aria-pressed="false">Raw values</button></div></div>
+    <div id="rawCalc" hidden>
+      <div class="trade">
+        <div class="side"><h3>Side A</h3><input type="search" id="rqA" placeholder="Add any player or pick" aria-label="Add to side A" autocomplete="off"><div class="rsug" id="rsA"></div><div class="rlist" id="rlA"></div></div>
+        <div class="side"><h3>Side B</h3><input type="search" id="rqB" placeholder="Add any player or pick" aria-label="Add to side B" autocomplete="off"><div class="rsug" id="rsB"></div><div class="rlist" id="rlB"></div></div>
+      </div>
+      <div id="rawOut"></div>
+    </div>
+    <div class="trade" id="teamCalc">
       <div class="side"><h3>Team A sends</h3><select id="tA" aria-label="Team A"></select><input type="search" id="sA" placeholder="Filter roster" aria-label="Filter Team A roster"><div class="pick-list" id="lA"></div></div>
       <div class="side"><h3>Team B sends</h3><select id="tB" aria-label="Team B"></select><input type="search" id="sB" placeholder="Filter roster" aria-label="Filter Team B roster"><div class="pick-list" id="lB"></div></div>
     </div>
@@ -1116,6 +1137,50 @@ function renderFinder() {
 }
 document.getElementById('fGo').addEventListener('click', findTrades);
 ['fGmin', 'fGmax'].forEach(id => document.getElementById(id).addEventListener('input', renderFinder));
+
+// ---------- raw-value calculator: any players or picks, no team or lineup ----------
+const rawA = [], rawB = [];
+const rawItem = id => isPick(id) ? (k => ({id, pick: true, n: k.n, sub: `pick · ${esc(k.o)}`, c: k.c, rb: k.rb, mv: k.mv}))(L.pickById.get(id))
+  : (p => ({id, pick: false, p, n: p.n, sub: `${p.p} · ${esc(p.t || 'FA')} · ${esc(p.o)}`, c: p.c || 0, rb: p.rb || 0, mv: p.mv}))(P[byId.get(id)]);
+function rawSuggest(q, box, side) {
+  q = q.trim().toLowerCase();
+  if (q.length < 2) { box.innerHTML = ''; return; }
+  const ps = P.filter(p => p.n.toLowerCase().includes(q)).sort((a, b) => Math.max(b.c || 0, b.rb || 0) - Math.max(a.c || 0, a.rb || 0)).slice(0, 8).map(p => p.id);
+  const ks = L.picks.filter(k => k.n.toLowerCase().includes(q) || `${k.season} ${k.round}`.includes(q)).slice(0, 6).map(k => k.id);
+  box.innerHTML = [...ps, ...ks].map(id => { const it = rawItem(id);
+    return `<button type="button" class="rsg" data-id="${id}"><span class="pos">${it.pick ? 'PK' : it.p.p}</span><span class="nm">${esc(it.n)}<span class="meta">${it.sub}</span></span><span class="vv">${f0(it.c)} / ${f0(it.rb)}</span></button>`; }).join('');
+  box.querySelectorAll('.rsg').forEach(b => b.addEventListener('click', () => {
+    if (!side.includes(b.dataset.id)) side.push(b.dataset.id);
+    box.innerHTML = ''; box.previousElementSibling.value = ''; renderRaw();
+  }));
+}
+function renderRaw() {
+  const list = (side, el) => {
+    el.innerHTML = side.map(id => { const it = rawItem(id); return `<div class="ritem"><span class="pos">${it.pick ? 'PK' : it.p.p}</span><span class="nm">${it.pick ? esc(it.n) : `<button type="button" class="pname" data-pid="${it.id}">${esc(it.n)}</button>`}<span class="meta">${it.sub}</span></span><span class="vv">${f0(it.c)} / ${f0(it.rb)}<br><span class="mut">mkt ${f0(it.mv)}</span></span><button type="button" class="rx" data-id="${id}" aria-label="Remove ${esc(it.n)}">×</button></div>`; }).join('') || '<p class="empty" style="padding:8px 0">Search to add players or picks.</p>';
+    el.querySelectorAll('.rx').forEach(b => b.addEventListener('click', () => { side.splice(side.indexOf(b.dataset.id), 1); renderRaw(); }));
+  };
+  list(rawA, document.getElementById('rlA')); list(rawB, document.getElementById('rlB'));
+  const out = document.getElementById('rawOut');
+  if (!rawA.length && !rawB.length) { out.innerHTML = ''; return; }
+  const sum = (side, k) => side.reduce((a, id) => a + (rawItem(id)[k] || 0), 0);
+  const row = (label, k) => {
+    const a = sum(rawA, k), b = sum(rawB, k), d = a - b, sc = Math.max(a, b) ? 100 * d / Math.max(a, b) : 0;
+    const who = Math.abs(sc) < 10 ? 'About even' : sc > 0 ? 'Side A is worth more' : 'Side B is worth more';
+    return `<tr><td><b>${label}</b></td><td>${f0(a)}</td><td>${f0(b)}</td><td class="${Math.abs(sc) >= 10 ? (sc > 0 ? 'num-good' : 'num-bad') : ''}">${sgv(d)}</td><td data-v="${sc.toFixed(1)}">${sc > 0.5 ? '+' : sc < -0.5 ? '−' : ''}${Math.abs(Math.round(sc))}</td><td class="l">${who}</td></tr>`;
+  };
+  out.innerHTML = `<div class="tw"><table data-key="raw"><thead><tr><th>Scale</th><th>Side A</th><th>Side B</th><th>A minus B</th><th>Score</th><th class="l">Verdict</th></tr></thead><tbody>
+    ${row('Contender value', 'c')}${row('Rebuilder value', 'rb')}${row('Market value', 'mv')}</tbody></table></div>
+    <div class="legend"><span>Score: −100 to +100 from Side A's view</span><span>Raw values just add up, so they ignore who would start: two mid players count in full even if only one would play. Use "For two teams" for lineup-based scores.</span></div>`;
+}
+document.getElementById('rqA').addEventListener('input', e => rawSuggest(e.target.value, document.getElementById('rsA'), rawA));
+document.getElementById('rqB').addEventListener('input', e => rawSuggest(e.target.value, document.getElementById('rsB'), rawB));
+document.querySelectorAll('#calcMode button').forEach(b => b.addEventListener('click', () => {
+  const raw = b.dataset.v === 'raw';
+  document.querySelectorAll('#calcMode button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  document.getElementById('rawCalc').hidden = !raw;
+  document.getElementById('teamCalc').hidden = raw; document.getElementById('verdicts').hidden = raw;
+  if (raw) renderRaw();
+}));
 
 // ---------- league view ----------
 function renderLeague() {
