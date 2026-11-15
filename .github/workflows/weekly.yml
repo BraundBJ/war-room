@@ -19,7 +19,7 @@ on:
         required: false
 
 permissions:
-  contents: read
+  contents: write   # the build commits a daily value snapshot to the history branch
   pages: write
   id-token: write
 
@@ -68,6 +68,18 @@ jobs:
           WR_WEEK: ${{ inputs.week }}
           MODE: ${{ steps.mode.outputs.mode }}
         run: ./run.sh
+      # one small file a day of every player's and pick's values, kept on the history branch (never rebuilt later)
+      - name: Save value snapshot
+        continue-on-error: true
+        run: |
+          git fetch -q --depth=1 origin history
+          git worktree add -q --detach hist FETCH_HEAD
+          python3 -I pipeline/snapshot.py work/site/data.json hist/values
+          cd hist
+          git add values
+          if git diff --cached --quiet; then echo "no change"; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898699+github-actions[bot]@users.noreply.github.com" commit -qm "Value snapshot $(date -u +%F)"
+          git push -q origin HEAD:history
       - uses: actions/cache/save@v4
         if: steps.mode.outputs.mode == 'full'
         with:

@@ -517,6 +517,34 @@ const seasonPts = (ids, ns = SIMS) => HZ.map(h => (W.contender[h] || W.rebuilder
 const weigh = (d, mode) => (mode === 'contender' ? L.scaleC : L.scaleR) * d.reduce((a, x, h) => a + W[mode][h] * x, 0);
 const baseCache = new Map();
 const baseOf = name => { if (!baseCache.has(name)) baseCache.set(name, seasonPts(L.teamBy.get(name).roster)); return baseCache.get(name); };
+// fantasy playoffs: best lineup each of weeks 15-17 by expected points (chance he plays x healthy PPG x matchup),
+// open slots filled at replacement level; average points a week
+function playoffLineup(t) {
+  if (t.poL !== undefined) return t.poL;
+  const ps = t.roster.filter(id => !L.taxi.has(id)).map(id => P[byId.get(id)]).filter(p => p && p.po && p.po.h != null);
+  if (!P.some(p => p.po)) return (t.poL = null);
+  let tot = 0;
+  PO_WEEKS.forEach((w, i) => {
+    const xs = ps.map(p => ({id: p.id, pos: p.p, v: p.po.h * p.po.w[i][2] * p.po.w[i][3]})).sort((a, b) => b.v - a.v), used = new Set();
+    for (const pos of POS4) for (let k = 0; k < L.def.fixed[pos]; k++) {
+      const c = xs.find(x => !used.has(x.id) && x.pos === pos); if (c) used.add(c.id); tot += Math.max(c ? c.v : 0, L.repl[pos] || 0); }
+    L.def.flex.forEach((g, gi) => { for (let k = 0; k < g.n; k++) {
+      const c = xs.find(x => !used.has(x.id) && g.pos.has(x.pos)); if (c) used.add(c.id); tot += Math.max(c ? c.v : 0, L.flexRepl[gi] || 0); } });
+  });
+  return (t.poL = tot / PO_WEEKS.length);
+}
+const poRank = t => { const v = playoffLineup(t); return v == null ? null : L.teams.filter(x => (playoffLineup(x) || 0) > v).length + 1; };
+// contention window: projected lineup points a week now and in 2027-2029 (current players only, no incoming rookies)
+const WIN_H = [0, 1, 2, 3], WIN_LAB = ['Now', '2027', '2028', '2029'];
+function windowOf(t) {
+  if (!L.teams[0].win) {
+    L.teams.forEach(x => { x.win = {pts: WIN_H.map(h => h === 0 ? x.wk : lineupPts(x.roster, h))}; });
+    WIN_H.forEach((h, j) => L.teams.slice().sort((a, b) => b.win.pts[j] - a.win.pts[j]).forEach((x, k) => { (x.win.rk = x.win.rk || [])[j] = k + 1; }));
+    L.teams.forEach(x => { const r = x.win.rk; x.win.best = r.indexOf(Math.min(...r)); x.win.trend = r[3] - r[0]; });
+  }
+  return t.win;
+}
+const winTxt = w => w.rk.every(k => k <= 3) ? 'Every year' : `${WIN_LAB[w.best]}${w.trend <= -3 ? ' <span class="up">▲</span>' : w.trend >= 3 ? ' <span class="dn">▼</span>' : ''}`;
 
 // player values for this league's lineup (the default league uses the precomputed ones)
 function computeValues() {
@@ -929,6 +957,8 @@ function renderTeam() {
       <div class="stat"><div class="k">Record</div><div class="v">${t.w}-${t.l}${t.tie ? '-' + t.tie : ''}</div><div class="s">${f1(t.pf)} points for</div></div>
       <div class="stat"><div class="k">Playoff chance</div><div class="v">${pct(t.sim.pPO)}</div><div class="s">${f1(t.sim.expW)}-${f1(t.sim.expL)} projected${L.divs ? ` · win ${esc(t.divName)} ${pct(t.sim.pDiv)}` : ''} · top seed ${pct(t.sim.p1)}</div></div>
       <div class="stat"><div class="k">Rest of 2026</div><div class="v">${f0(t.projRos)}</div><div class="s">lineup points, ${ord(rank)} of ${L.teams.length}</div></div>
+      ${playoffLineup(t) != null ? `<div class="stat"><div class="k">Playoff lineup</div><div class="v">${f1(playoffLineup(t))}</div><div class="s">points a week, weeks 15 to 17 · ${ord(poRank(t))} of ${L.teams.length}</div></div>` : ''}
+      <div class="stat"><div class="k">Window</div><div class="v">${winTxt(windowOf(t))}</div><div class="s">lineup rank ${windowOf(t).rk.map((k, j) => `${WIN_LAB[j].toLowerCase()} ${ord(k)}`).join(', ')}</div></div>
       <div class="stat"><div class="k">Future value</div><div class="v">${f0(plRb + pickRb)}</div><div class="s">rebuilder: players ${f0(plRb)} + picks ${f0(pickRb)}</div></div>
     </div>
     <div class="panel"><h3>Roster</h3>
@@ -1302,14 +1332,18 @@ function renderLeague() {
   const si = L.simInfo;
   document.getElementById('v-league').innerHTML = `
     <div><h2>${esc(L.name)}</h2></div>
-    <div class="tw"><table data-key="league"><thead><tr><th>Team</th><th>Record</th><th>Points for</th><th class="l">Division</th><th>Projected record</th><th>Playoffs</th><th>Win division</th><th>Top seed</th><th>Projected seed</th><th>Rest of 2026 pts</th><th class="l">Mode</th><th>Now value</th><th>Future value</th><th>Future rank</th><th>Pick value</th><th>Core age</th></tr></thead>
-    <tbody>${rows.map(r => `<tr>${teamCell(r.t.name)}<td data-v="${r.t.w + r.t.tie / 2}">${r.t.w}-${r.t.l}${r.t.tie ? '-' + r.t.tie : ''}</td><td>${f1(r.t.pf)}</td><td class="l">${esc(r.t.divName || '—')}</td><td data-v="${r.t.sim.expW.toFixed(2)}">${f1(r.t.sim.expW)}-${f1(r.t.sim.expL)}</td><td data-v="${r.t.sim.pPO}" ${tipA(L.pfSpot && L.divs ? `Division ${pct(r.t.sim.pDiv)} · points-for spot ${pct(r.t.sim.pPF)}` : '')}><b>${pct(r.t.sim.pPO)}</b></td><td data-v="${r.t.sim.pDiv || 0}">${L.divs ? pct(r.t.sim.pDiv) : '—'}</td><td data-v="${r.t.sim.p1}">${pct(r.t.sim.p1)}</td><td data-v="${r.t.sim.expRank}">${r.t.sim.expRank.toFixed(1)}</td><td>${f0(r.t.projRos)}</td><td class="l">${modeChip(r.t.mode)}</td><td>${f0(r.now)}</td><td><b>${f0(r.fut)}</b></td><td>${futRank.indexOf(r.t.name) + 1}</td><td>${f0(r.kr)}</td><td>${r.age ? r.age.toFixed(1) : '—'}</td></tr>`).join('')}</tbody></table></div>
+    <div class="tw"><table data-key="league"><thead><tr><th>Team</th><th>Record</th><th>Points for</th><th class="l">Division</th><th>Projected record</th><th>Playoffs</th><th>Win division</th><th>Top seed</th><th>Projected seed</th><th>Rest of 2026 pts</th><th>Playoff lineup</th><th class="l">Mode</th><th>Now value</th><th>Future value</th><th>Future rank</th><th>Pick value</th><th>Core age</th></tr></thead>
+    <tbody>${rows.map(r => `<tr>${teamCell(r.t.name)}<td data-v="${r.t.w + r.t.tie / 2}">${r.t.w}-${r.t.l}${r.t.tie ? '-' + r.t.tie : ''}</td><td>${f1(r.t.pf)}</td><td class="l">${esc(r.t.divName || '—')}</td><td data-v="${r.t.sim.expW.toFixed(2)}">${f1(r.t.sim.expW)}-${f1(r.t.sim.expL)}</td><td data-v="${r.t.sim.pPO}" ${tipA(L.pfSpot && L.divs ? `Division ${pct(r.t.sim.pDiv)} · points-for spot ${pct(r.t.sim.pPF)}` : '')}><b>${pct(r.t.sim.pPO)}</b></td><td data-v="${r.t.sim.pDiv || 0}">${L.divs ? pct(r.t.sim.pDiv) : '—'}</td><td data-v="${r.t.sim.p1}">${pct(r.t.sim.p1)}</td><td data-v="${r.t.sim.expRank}">${r.t.sim.expRank.toFixed(1)}</td><td>${f0(r.t.projRos)}</td><td data-v="${playoffLineup(r.t) ?? -1}" ${tipA('Best lineup, average points a week in weeks 15 to 17: ' + (poRank(r.t) ? ord(poRank(r.t)) + ' of ' + n : '—'))}>${f1(playoffLineup(r.t))}</td><td class="l">${modeChip(r.t.mode)}</td><td>${f0(r.now)}</td><td><b>${f0(r.fut)}</b></td><td>${futRank.indexOf(r.t.name) + 1}</td><td>${f0(r.kr)}</td><td>${r.age ? r.age.toFixed(1) : '—'}</td></tr>`).join('')}</tbody></table></div>
     <div class="legend"><span>Now value: contender values of players and picks</span><span>Future value: rebuilder values of players plus picks</span><span>${si.weeksLeft ? `Simulated ${si.weeksLeft} regular-season weeks left, 6,000 times` : 'Regular season complete'}</span>${L.pfSpot && L.divs ? '<span>Playoffs: 3 division winners, the next 2 best records, then the most points for among the rest</span>' : ''}</div>
     <div class="panel"><h3>Playoff seed odds</h3>
       ${isCompact() ? heatStrip(rows.map(r => { const mx = r.t.sim.rankP.indexOf(Math.max(...r.t.sim.rankP));
           return {title: `<button type="button" class="tname" data-team="${esc(r.t.name)}">${esc(r.t.label)}</button>`, meta: `playoffs ${pct(r.t.sim.pPO)} · most likely seed ${mx + 1}`, p: r.t.sim.rankP, tip: esc(r.t.label) + ' seed'}; }), n, k => k + 1, L.pfSpot && L.divs ? 'Chance (%) of each seed: 1-3 division winners, 4-5 best other records, 6 most points for' : 'Chance (%) of each seed') :
       `<div class="tw"><table data-key="finish"><thead><tr><th>Team</th>${Array.from({length: n}, (_, k) => `<th>Seed ${k + 1}</th>`).join('')}</tr></thead>
       <tbody>${rows.map(r => `<tr>${teamCell(r.t.name)}${r.t.sim.rankP.map((v, k) => heatTd(v, `${esc(r.t.label)}, seed ${k + 1}: <b>${pct(v)}</b>`, v >= 0.005 ? pct(v) : '')).join('')}</tr>`).join('')}</tbody></table></div>`}</div>
+    <div class="panel"><h3>Contention window</h3>
+      <div class="tw"><table data-key="window"><thead><tr><th>Team</th>${WIN_LAB.map(l => `<th>${l}</th>`).join('')}<th class="l">Best year</th></tr></thead>
+      <tbody>${rows.map(r => { const w = windowOf(r.t); return `<tr>${teamCell(r.t.name)}${w.pts.map((v, j) => heatTd((n - w.rk[j]) / Math.max(1, n - 1), `${esc(r.t.label)}, ${WIN_LAB[j]}: ${f1(v)} a week, ${ord(w.rk[j])} of ${n}`, `${f1(v)} <span class="mut">${ord(w.rk[j])}</span>`)).join('')}<td class="l" data-v="${w.best}">${winTxt(w)}</td></tr>`; }).join('')}</tbody></table></div>
+      <div class="legend"><span>Projected starting lineup points a week, with each player's chance of being healthy</span><span>Current players only: rookies from future picks are not counted, so pick-heavy teams look weaker in 2028-2029 than they are</span><span>▲ / ▼ rank 3+ spots better / worse by 2029</span></div></div>
     <div class="panel"><h3>Trade log</h3><div class="log">${log || '<p class="empty">No trades yet.</p>'}</div></div>`;
 }
 
@@ -1420,7 +1454,7 @@ document.addEventListener('click', e => {
   sortState.set(k, {i, dir}); tbl.tBodies[0].dataset.sorted = ''; sortTable(tbl);
 });
 // on phones each card shows the most useful fields first; the rest open with a tap
-const CARD_KEYS = ['You send', 'From', 'Your gain', 'Market: get / send', 'Why', 'Owner', 'Pick owner', 'Record', 'Playoffs', 'Win division', 'Projected seed',
+const CARD_KEYS = ['You send', 'From', 'Your gain', 'Market: get / send', 'Why', 'Owner', 'Pick owner', 'Record', 'Playoffs', 'Win division', 'Projected seed', 'Playoff lineup',
   'Value to you', 'Value to them', 'Contender', 'Rebuilder', 'Market', 'Trend', 'Rest of 2026', 'Playoff PPG', 'Expected PPG', 'Signal',
   'Hit rate', 'Star', 'Bust', '3-year PPG', 'Trend per year', 'Projected slot', 'Picks', 'Firsts', 'Now value', 'Future value', 'Slot', ''];
 const CARD_MAX = 6;
