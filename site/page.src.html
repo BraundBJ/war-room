@@ -105,6 +105,8 @@ td.l, th.l { text-align: left; }
 .pname:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .inj { display: inline-block; font-size: 10px; font-weight: 600; padding: 0 4px; border-radius: 3px; margin-left: 5px; background: var(--bad-soft); color: var(--bad); vertical-align: 1px; }
 .inj.q { background: var(--chip); color: var(--warn); }
+.inj.ss { background: var(--chip); color: var(--muted); font-weight: 500; }
+.chart .ln { fill: none; stroke-width: 2; } .chart .ln.mk { stroke-dasharray: 5 4; }
 .chip.gain { background: var(--good-soft); color: var(--good); }
 .chip.risk { background: var(--chip); color: var(--warn); }
 .chip.out { background: var(--bad-soft); color: var(--bad); }
@@ -410,6 +412,18 @@ body.compact .tw td { font-size: 12.5px; }
       <p>Each side's score runs from −100 to +100: net value gained divided by the larger of what it sent and what it received. +100 means value back for nothing, 0 an even swap. The overall number is half the gap between the two teams' scores, each in its own mode.</p>
       <h3>League trades</h3>
       <p>Placeholder trades are filtered out: round trips between the same two teams within three weeks, FAAB-only swaps, startup pick swaps, and the McCarthy for Carson Beck trade.</p>
+      <h3>Fantasy playoffs</h3>
+      <p>Playoff PPG is a player's expected points per week in weeks 15 to 17: his healthy rest-of-season PPG, times his chance of playing that week (injury timeline and usual availability), times a matchup factor. The matchup factor is how many points that defense allows his position this season, scaled by how much defense moved scoring in 2016-2025 games: most for RBs and QBs, least for TEs. A bye week counts as zero. Playoff lineup is a team's best lineup each of those weeks, averaged.</p>
+      <h3>Contention window</h3>
+      <p>Each team's projected starting lineup points a week now and in 2027, 2028 and 2029, with each player's chance of being healthy. Only current players count, so teams with many picks look weaker in later years than they will be.</p>
+      <h3>Sell by</h3>
+      <p>Each season's projected value for a player (healthy chance, games and points above replacement, the same pieces as his values). Sell by is the season before the first one from 2028 on that projects below 60% of his best season from 2027 on. A player already near his position's age cliff (RB 26, WR and TE 28, QB 31 next season) whose 2027 projects under half of this season's pace shows "This offseason". Hold means no such drop through 2031.</p>
+      <h3>Small sample</h3>
+      <p>Tagged on players with real value and fewer than 6 full NFL games across 2025 and 2026. Their projections can move a lot as games come in.</p>
+      <h3>Trade grades</h3>
+      <p>Every two-team trade re-scored at today's values: what each team got minus what it gave, in that team's current mode, plus the same at market value. 2026 startup picks aren't valued.</p>
+      <h3>Value history</h3>
+      <p>Every player's and pick's contender, rebuilder and market values are saved once a day, starting November 15, 2026. A player shows Buy low when his market value fell 12% or more over four weeks while ours held at least 10 points better, and Sell high for the reverse. Flags start once two weeks of history exist.</p>
       <p class="mut" id="mBuilt"></p>
     </div>
   </section>
@@ -422,6 +436,7 @@ body.compact .tw td { font-size: 12.5px; }
 (() => {
 const D = JSON.parse(document.getElementById('data').textContent);
 const P = D.players, M = D.meta;
+let HIST = null;  // value history, fetched after load
 const byId = new Map(P.map((p, i) => [p.id, i]));
 P.forEach(p => { p.base = {c: p.c, cl: p.cl, ch: p.ch, rb: p.rb, rl: p.rl, rh: p.rh}; });
 const HZ = [0, 1, 2, 3, 4, 5];
@@ -710,10 +725,11 @@ function buildTrades(tx) {
     if (picks.length && picks.every(d => String(d.season) === '2026') && !Object.keys(adds).length) continue;
     const names = new Set(Object.keys(adds).map(name));
     if (L.isDefault && MANUAL_FAKE.some(m => m.every(x => names.has(x)))) continue;
-    out.push({date: new Date(t.status_updated).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}),
+    out.push({date: new Date(t.status_updated).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}), iso: new Date(t.status_updated).toISOString().slice(0, 10),
       sides: (t.roster_ids || []).map(rid => ({team: (L.byRid.get(rid) || {}).name,
         players: Object.entries(adds).filter(([, r]) => r === rid).map(([id]) => ({id, n: name(id)})),
-        picks: picks.filter(d => d.owner_id === rid).map(d => `${d.season} round ${d.round}`)}))});
+        picks: picks.filter(d => d.owner_id === rid).map(d => `${d.season} round ${d.round}`),
+        pk: picks.filter(d => d.owner_id === rid).map(d => `pk-${d.season}-${d.round}-${d.roster_id}`)}))});
   }
   return out;
 }
@@ -854,7 +870,7 @@ function setLeague(raw, {isDefault = false, live = false, meUid = null} = {}) {
     }
   }
   L.flexRepl = L.def.flex.map(g => Math.max(...[...g.pos].map(p => L.repl[p] || 0)));
-  lpCache.clear(); baseCache.clear(); valCache.clear(); pending.clear(); fResults = null;
+  lpCache.clear(); baseCache.clear(); valCache.clear(); sbCache.clear(); pending.clear(); fResults = null;
   buildTeams(raw);
   computeValues();
   computeRanks();
@@ -900,9 +916,39 @@ const sigChip = s => s == null ? '<span class="mut">—</span>' : s >= 1 ? `<spa
 const sigCell = p => `<td data-v="${p.sig ?? -99}">${sigChip(p.sig)}</td>`;
 const modeChip = m => `<span class="chip ${m === 'contender' ? 'c' : ''}">${m === 'contender' ? 'Contender' : 'Rebuilder'}</span>`;
 const injTag = p => p.inj ? `<span class="inj ${p.inj.s === 'Questionable' ? 'q' : ''}" title="${esc(p.inj.b || '')}">${p.inj.s === 'Questionable' ? 'Q' : esc(p.inj.s)}</span>` : '';
-const plCell = p => `<td data-s="${esc(p.n)}"><span class="pl"><span class="pos">${p.p}</span><button type="button" class="pname" data-pid="${p.id}">${esc(p.n)}</button>${injTag(p)}<span class="meta"><span class="rk">${rankTxt(p)}</span> · ${esc(p.t || 'FA')} · ${p.age != null ? p.age.toFixed(0) : '—'} yrs</span></span></td>`;
+// small sample: fewer than 6 full NFL games across 2025-26, for players with real value
+const nflGames = p => (p.g || 0) + (p.w25 || []).length;
+const ssTag = p => nflGames(p) < 6 && Math.max(p.c || 0, p.rb || 0) >= 300 ? `<span class="inj ss" ${tipA(`Only ${nflGames(p)} full NFL games in 2025-26, so his projection rests on a small sample and can move a lot`)}>small sample</span>` : '';
+const plCell = p => `<td data-s="${esc(p.n)}"><span class="pl"><span class="pos">${p.p}</span><button type="button" class="pname" data-pid="${p.id}">${esc(p.n)}</button>${injTag(p)}${ssTag(p)}<span class="meta"><span class="rk">${rankTxt(p)}</span> · ${esc(p.t || 'FA')} · ${p.age != null ? p.age.toFixed(0) : '—'} yrs</span></span></td>`;
 const teamCell = name => { const t = L.teamBy.get(name); return t ? `<td data-s="${esc(t.label)}"><button type="button" class="tname" data-team="${esc(t.name)}">${esc(t.label)}</button><span class="meta">${esc(t.name)}</span></td>` : `<td class="l">${esc(name)}</td>`; };
 const ownerCell = p => p.o === 'Free agent' ? '<td class="l"><span class="chip fa">Free agent</span></td>' : `<td class="l" data-s="${esc(p.o)}"><button type="button" class="tname sm" data-team="${esc(p.o)}">${esc(p.o)}</button></td>`;
+// sell-by: his projected value for each season (healthy chance x games x points above replacement, as in the
+// player values). Sell before the first season from 2028 on that falls below 60% of his best 2027+ season; players
+// already near their position's age cliff whose 2027 projects under half of this season's pace: this offseason.
+const SELL_LAB = ['Now', 'This offseason', 'Before 2028', 'Before 2029', 'Before 2030', 'Before 2031', 'Hold'];
+const SEASON_LAB = ['2026', '2027', '2028', '2029', '2030', '2031'];
+const CLIFF = {QB: 32, RB: 27, WR: 29, TE: 29};
+const sbCache = new Map();
+function seasonVals(p) {
+  const r = L.repl[p.p] ?? 0;
+  return HZ.map(h => { const mu = p.proj[h]; if (mu == null) return 0;
+    const sd = Math.max(0.5, p.sd[h] || 0.5), z = (mu - r) / sd, g = h === 0 ? (p.gm[0] || 0) * 17 / Math.max(1, WEEKS[0]) : (p.gm[h] || 0);
+    return (h === 0 ? 1 : (p.ph[h] || 0)) * g * (sd * phi(z) + (mu - r) * Phi(z)); });
+}
+function sellBy(p) {
+  if (sbCache.has(p.id)) return sbCache.get(p.id);
+  let out = null;
+  if (Math.max(p.c || 0, p.rb || 0) >= 300) {
+    const v = seasonVals(p);
+    let h = 6, peak = v[1];
+    if (p.age != null && p.age + 1 >= (CLIFF[p.p] || 29) - 1 && v[1] < 0.5 * v[0]) h = 1;
+    else for (let k = 2; k < v.length; k++) { if (v[k] < 0.6 * peak) { h = k; break; } peak = Math.max(peak, v[k]); }
+    out = {h, v, best: Math.max(...v.slice(1)) || 1};
+  }
+  sbCache.set(p.id, out); return out;
+}
+const sbTip = sb => 'Projected season value vs his best from 2027: ' + sb.v.map((x, h) => `${h ? SEASON_LAB[h] : '2026 pace'} ${Math.round(100 * x / sb.best)}%`).join(' · ');
+const sbCell = p => { const sb = sellBy(p); return sb ? `<td class="l" data-v="${sb.h}" ${tipA(sbTip(sb))}>${sb.h === 1 ? '<b>' + SELL_LAB[1] + '</b>' : SELL_LAB[sb.h]}</td>` : '<td class="l" data-v="9">—</td>'; };
 const OL_LABEL = {gain: 'Gaining', risk: 'Gaining, at risk', out: 'Out', q: 'Questionable'};
 const olCell = p => p.ol ? `<td class="ol" data-v="${({gain: 4, risk: 3, q: 2, out: 1})[p.ol.kind]}"><span class="chip ${p.ol.kind}">${OL_LABEL[p.ol.kind]}</span><br>${esc(p.ol.text)}</td>` : '<td class="ol" data-v="0">—</td>';
 const ourVal = (p, mode) => mode === 'contender' ? p.c : p.rb;
@@ -949,7 +995,7 @@ function renderTeam() {
   const rank = L.teams.slice().sort((a, b) => b.projRos - a.projRos).findIndex(x => x.name === t.name) + 1;
   const ks = t.picks.map(id => L.pickById.get(id)).filter(Boolean).sort((a, b) => a.season - b.season || a.round - b.round);
   const pickRb = ks.reduce((a, k) => a + k.rb, 0), plRb = roster.reduce((a, r) => a + (r.p.rb || 0), 0);
-  const row = r => `<tr>${plCell(r.p)}<td data-v="${r.p.ppg ?? -1}">${f1(r.p.ppg)}<span class="mut"> /${r.p.g}g</span></td><td>${f1(r.p.proj[0])}</td>${poCell(r.p)}${trCell(r.p)}${valCell(t.name, r.p)}<td>${f0(r.p.c)}</td><td>${f0(r.p.rb)}</td>${mkCells(r.p, mode)}${sigCell(r.p)}${olCell(r.p)}</tr>`;
+  const row = r => `<tr>${plCell(r.p)}<td data-v="${r.p.ppg ?? -1}">${f1(r.p.ppg)}<span class="mut"> /${r.p.g}g</span></td><td>${f1(r.p.proj[0])}</td>${poCell(r.p)}${trCell(r.p)}${valCell(t.name, r.p)}<td>${f0(r.p.c)}</td><td>${f0(r.p.rb)}</td>${sbCell(r.p)}${mkCells(r.p, mode)}${sigCell(r.p)}${olCell(r.p)}</tr>`;
   document.getElementById('v-team').innerHTML = `
     <div class="teamhead"><div><h2>${esc(t.label)}</h2><p class="lede keep">${esc(t.name)} · ${modeChip(mode)} · values use ${mode} weights</p></div>
       ${mine ? '' : `<button type="button" class="more" id="backMine">Back to my team</button>`}</div>
@@ -962,7 +1008,7 @@ function renderTeam() {
       <div class="stat"><div class="k">Future value</div><div class="v">${f0(plRb + pickRb)}</div><div class="s">rebuilder: players ${f0(plRb)} + picks ${f0(pickRb)}</div></div>
     </div>
     <div class="panel"><h3>Roster</h3>
-      <div class="tw"><table data-key="roster"><thead><tr><th>Player</th><th>2026 PPG</th><th>Rest of 2026</th><th>Playoff PPG</th><th>Trend</th><th>Value to ${who}</th><th>Contender</th><th>Rebuilder</th><th>Market</th><th>vs market</th><th>Signal</th><th class="l">Opportunity</th></tr></thead><tbody>${roster.map(row).join('')}</tbody></table></div></div>
+      <div class="tw"><table data-key="roster"><thead><tr><th>Player</th><th>2026 PPG</th><th>Rest of 2026</th><th>Playoff PPG</th><th>Trend</th><th>Value to ${who}</th><th>Contender</th><th>Rebuilder</th><th class="l">Sell by</th><th>Market</th><th>vs market</th><th>Signal</th><th class="l">Opportunity</th></tr></thead><tbody>${roster.map(row).join('')}</tbody></table></div></div>
     <div class="grid2">
       <div class="panel"><h3>Seed odds</h3><div class="legend"><span><i style="background:var(--accent)"></i>Playoff seed</span><span><i style="background:var(--muted);opacity:.45"></i>Outside</span></div>${finishChart(t)}</div>
       <div class="panel"><h3>Picks</h3>
@@ -1058,8 +1104,8 @@ const trOK = (tf, p) => !tf || (tf === 'up' ? p.tr && p.tr.dir > 0 : p.tr && p.t
 const COLS = [
   ['n', 'Player', p => p.n], ['o', 'Owner', p => p.o], ['ppg', '2026 PPG', p => p.ppg], ['r0', 'Rest of 2026', p => p.proj[0]], ['po', 'Playoff PPG', p => p.po ? p.po.e : null],
   ['tr', 'Trend', p => p.tr ? p.tr.score : null], ['r1', '2027 PPG', p => p.proj[1]], ['h1', 'Healthy 2027', p => p.ph[1]],
-  ['c', 'Contender', p => p.c], ['rb', 'Rebuilder', p => p.rb], ['vt', 'Value to you', p => valTo(ME, p)],
-  ['mv', 'Market', p => p.mv], ['gap', 'vs market', p => p.mv == null ? null : (ourVal(p, (L.teamBy.get(ME) || {}).mode) || 0) - p.mv],
+  ['c', 'Contender', p => p.c], ['rb', 'Rebuilder', p => p.rb], ['sb', 'Sell by', p => (sellBy(p) || {}).h ?? null], ['vt', 'Value to you', p => valTo(ME, p)],
+  ['mv', 'Market', p => p.mv], ['gap', 'vs market', p => p.mv == null ? null : (ourVal(p, (L.teamBy.get(ME) || {}).mode) || 0) - p.mv], ['mv4', '4-week move', p => (histMove(p.id) || {}).dm ?? null],
   ['sig', 'Signal', p => p.sig], ['ol', 'Opportunity', p => p.ol ? ({gain: 4, risk: 3, q: 2, out: 1})[p.ol.kind] : null]];
 function renderPlayers() {
   const q = document.getElementById('pSearch').value.trim().toLowerCase(), own = pOwner.value;
@@ -1070,15 +1116,15 @@ function renderPlayers() {
   const shown = pAll ? rows : rows.slice(0, 150);
   document.getElementById('pMore').hidden = pAll || rows.length <= 150;
   document.getElementById('pMore').textContent = `Show all ${rows.length} players`;
-  const th = COLS.map(([k, label]) => `<th class="${k === 'n' || k === 'o' || k === 'ol' ? 'l' : ''}" aria-sort="${pSort === k ? (pDir < 0 ? 'descending' : 'ascending') : 'none'}"><button type="button" data-k="${k}">${label}${pSort === k ? (pDir < 0 ? ' ↓' : ' ↑') : ''}</button></th>`).join('');
+  const th = COLS.map(([k, label]) => `<th class="${k === 'n' || k === 'o' || k === 'ol' || k === 'sb' ? 'l' : ''}" aria-sort="${pSort === k ? (pDir < 0 ? 'descending' : 'ascending') : 'none'}"><button type="button" data-k="${k}">${label}${pSort === k ? (pDir < 0 ? ' ↓' : ' ↑') : ''}</button></th>`).join('');
   const mc = maxC();
   document.getElementById('pTable').innerHTML = `<thead><tr>${th}</tr></thead><tbody>${shown.map(p => `<tr>
     ${plCell(p)}${ownerCell(p)}<td>${f1(p.ppg)}<span class="mut"> /${p.g}g</span></td>
     <td>${f1(p.proj[0])}</td>${poCell(p)}${trCell(p)}<td ${tipA(`10th to 90th percentile: ${f1(p.lo[1])} to ${f1(p.hi[1])}`)}>${f1(p.proj[1])}</td><td>${pct(p.ph[1])}</td>
-    <td ${tipA(`Range ${f0(p.cl)} to ${f0(p.ch)}`)}><b>${f0(p.c)}</b>${rangeBar(p.c || 0, p.cl || 0, p.ch || 0, mc)}</td><td>${f0(p.rb)}</td>
-    ${valCell(ME, p)}${mkCells(p, mode)}${sigCell(p)}${olCell(p)}</tr>`).join('')}</tbody>`;
+    <td ${tipA(`Range ${f0(p.cl)} to ${f0(p.ch)}`)}><b>${f0(p.c)}</b>${rangeBar(p.c || 0, p.cl || 0, p.ch || 0, mc)}</td><td>${f0(p.rb)}</td>${sbCell(p)}
+    ${valCell(ME, p)}${mkCells(p, mode)}${moveCell(p)}${sigCell(p)}${olCell(p)}</tr>`).join('')}</tbody>`;
   document.querySelectorAll('#pTable th button').forEach(b => b.addEventListener('click', () => {
-    const k = b.dataset.k; if (pSort === k) pDir = -pDir; else { pSort = k; pDir = (k === 'n' || k === 'o') ? 1 : -1; } renderPlayers(); }));
+    const k = b.dataset.k; if (pSort === k) pDir = -pDir; else { pSort = k; pDir = (k === 'n' || k === 'o' || k === 'sb') ? 1 : -1; } renderPlayers(); }));
 }
 document.getElementById('pSearch').addEventListener('input', renderPlayers);
 pOwner.addEventListener('change', renderPlayers);
@@ -1327,8 +1373,13 @@ function renderLeague() {
       age: core.length ? core.reduce((s, p) => s + (p.age || 0), 0) / core.length : null};
   }).sort((a, b) => a.t.sim.expRank - b.t.sim.expRank);
   const futRank = rows.slice().sort((a, b) => b.fut - a.fut).map(r => r.t.name);
-  const log = L.trades.slice().reverse().map(tr => `<div class="t"><div class="d">${esc(tr.date)}</div><div class="sides">${tr.sides.map(s =>
-    `<div><b>${esc(s.team)}</b> gets ${[...s.players.map(p => { const q = P[byId.get(p.id)]; return esc(p.n) + (q ? ` <span class="mut">(${f0(q.c)})</span>` : ''); }), ...s.picks.map(esc)].join(', ') || '<span class="mut">nothing</span>'}</div>`).join('')}</div></div>`).join('');
+  const grades = new Map(L.trades.map(tr => [tr, gradeTrade(tr)]));
+  const log = L.trades.slice().reverse().map(tr => { const gr = grades.get(tr);
+    return `<div class="t"><div class="d">${esc(tr.date)}</div><div class="sides">${tr.sides.map((s, i) =>
+    `<div><b>${esc(s.team)}</b> gets ${[...s.players.map(p => { const q = P[byId.get(p.id)]; return esc(p.n) + (q ? ` <span class="mut">(${f0(q.c)})</span>` : ''); }), ...s.picks.map(esc)].join(', ') || '<span class="mut">nothing</span>'}${gr ? ` <span class="mut">·</span> today ${netTxt(gr[i].net)} <span class="mut">${gr[i].mode} · market ${gr[i].mk == null ? '—' : sgv(gr[i].mk)}</span>` : ''}</div>`).join('')}${gr && gr[0].old ? '<div class="mut">2026 startup picks are not valued</div>' : ''}</div></div>`; }).join('');
+  const rec = new Map(L.teams.map(t => [t.name, {t, n: 0, up: 0, dn: 0, net: 0, mk: 0}]));
+  grades.forEach(gr => (gr || []).forEach(x => { const r = rec.get(x.team); if (!r) return; r.n++; r.net += x.net; r.mk += x.mk || 0; if (x.net > 0) r.up++; else if (x.net < 0) r.dn++; }));
+  const recRows = [...rec.values()].filter(r => r.n).sort((a, b) => b.net - a.net);
   const si = L.simInfo;
   document.getElementById('v-league').innerHTML = `
     <div><h2>${esc(L.name)}</h2></div>
@@ -1344,6 +1395,10 @@ function renderLeague() {
       <div class="tw"><table data-key="window"><thead><tr><th>Team</th>${WIN_LAB.map(l => `<th>${l}</th>`).join('')}<th class="l">Best year</th></tr></thead>
       <tbody>${rows.map(r => { const w = windowOf(r.t); return `<tr>${teamCell(r.t.name)}${w.pts.map((v, j) => heatTd((n - w.rk[j]) / Math.max(1, n - 1), `${esc(r.t.label)}, ${WIN_LAB[j]}: ${f1(v)} a week, ${ord(w.rk[j])} of ${n}`, `${f1(v)} <span class="mut">${ord(w.rk[j])}</span>`)).join('')}<td class="l" data-v="${w.best}">${winTxt(w)}</td></tr>`; }).join('')}</tbody></table></div>
       <div class="legend"><span>Projected starting lineup points a week, with each player's chance of being healthy</span><span>Current players only: rookies from future picks are not counted, so pick-heavy teams look weaker in 2028-2029 than they are</span><span>▲ / ▼ rank 3+ spots better / worse by 2029</span></div></div>
+    <div class="panel"><h3>Trade record, at today's values</h3>
+      ${recRows.length ? `<div class="tw"><table data-key="traderec"><thead><tr><th>Team</th><th>Trades</th><th>Ahead</th><th>Behind</th><th>Net value</th><th>Net market</th></tr></thead>
+      <tbody>${recRows.map(r => `<tr>${teamCell(r.t.name)}<td>${r.n}</td><td>${r.up}</td><td>${r.dn}</td><td data-v="${r.net.toFixed(0)}"><b>${netTxt(r.net)}</b></td><td data-v="${r.mk.toFixed(0)}">${L.market ? netTxt(r.mk) : '—'}</td></tr>`).join('')}</tbody></table></div>
+      <div class="legend"><span>Net value: what each team got minus what it gave, at today's values in its own mode (contender or rebuilder)</span><span>Two-team trades only</span></div>` : '<p class="empty">No trades yet.</p>'}</div>
     <div class="panel"><h3>Trade log</h3><div class="log">${log || '<p class="empty">No trades yet.</p>'}</div></div>`;
 }
 
@@ -1398,7 +1453,15 @@ function renderSignals() {
   const share = p => p.p === 'RB' ? `${pct(p.car)} car · ${pct(p.tgt)} tgt` : p.p === 'QB' ? '—' : `${pct(p.tgt)} tgt`;
   const el = document.getElementById('v-signals');
   const keep = document.activeElement && document.activeElement.id === 'sSearch';
+  const mv = histReady() ? P.map(p => ({p, m: histMove(p.id)})).filter(x => x.m && x.m.flag) : [];
+  const mvRows = f => mv.filter(x => x.m.flag === f).sort((a, b) => f === 'buy' ? a.m.dm - b.m.dm : b.m.dm - a.m.dm).slice(0, 15)
+    .map(x => `<tr>${plCell(x.p)}${ownerCell(x.p)}<td data-v="${x.m.dm.toFixed(3)}"><b>${sgPct(x.m.dm)}</b></td><td>${sgPct(x.m.dO)}</td><td>${f0(x.p.mv)}</td><td>${f0(ourVal(x.p, (L.teamBy.get(ME) || {}).mode))}</td></tr>`).join('');
+  const mvTable = (f, key) => `<div class="tw"><table data-key="${key}"><thead><tr><th>Player</th><th class="l">Owner</th><th>Market, 4 wk</th><th>Ours, 4 wk</th><th>Market</th><th>Ours</th></tr></thead><tbody>${mvRows(f) || `<tr><td colspan="6" class="empty">None right now.</td></tr>`}</tbody></table></div>`;
   el.innerHTML = `
+    ${L.isDefault ? `<div><h2>Buy low, sell high</h2></div>
+    ${histReady() ? `<div class="grid2"><div class="panel"><h3>Buy low</h3>${mvTable('buy', 'buylow')}</div><div class="panel"><h3>Sell high</h3>${mvTable('sell', 'sellhigh')}</div></div>
+    <div class="legend"><span>Buy low: market down 12%+ over 4 weeks while our value held 10+ points better</span><span>Sell high: market up 12%+ while ours lagged 10+ points</span></div>`
+      : `<p class="empty">Starts ${histStartTxt()}, once two weeks of value history exist.</p>`}` : ''}
     <div><h2>New opportunity</h2></div>
     <div class="panel"><div class="tw"><table data-key="opp"><thead><tr><th>Player</th><th class="l">Owner</th><th>Rest of 2026</th><th>2026 PPG</th><th>Trend</th><th class="l">Why</th></tr></thead>
       <tbody>${opp.map(x => `<tr>${plCell(x.p)}${ownerCell(x.p)}<td><b>${f1(x.p.proj[0])}</b></td><td>${f1(x.p.ppg)}</td>${trCell(x.p)}<td class="ol">${x.why.map(esc).join('<br>')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nothing new this week.</td></tr>'}</tbody></table></div></div>
@@ -1455,7 +1518,7 @@ document.addEventListener('click', e => {
 });
 // on phones each card shows the most useful fields first; the rest open with a tap
 const CARD_KEYS = ['You send', 'From', 'Your gain', 'Market: get / send', 'Why', 'Owner', 'Pick owner', 'Record', 'Playoffs', 'Win division', 'Projected seed', 'Playoff lineup',
-  'Value to you', 'Value to them', 'Contender', 'Rebuilder', 'Market', 'Trend', 'Rest of 2026', 'Playoff PPG', 'Expected PPG', 'Signal',
+  'Value to you', 'Value to them', 'Contender', 'Rebuilder', 'Market', 'Trend', 'Rest of 2026', 'Playoff PPG', 'Sell by', '4-week move', 'Expected PPG', 'Signal',
   'Hit rate', 'Star', 'Bust', '3-year PPG', 'Trend per year', 'Projected slot', 'Picks', 'Firsts', 'Now value', 'Future value', 'Slot', ''];
 const CARD_MAX = 6;
 function labelTable(t) {
@@ -1540,7 +1603,7 @@ function openPlayer(id) {
   const sn = shareName(p);
   const hz = ['Rest of 2026', '2027', '2028', '2029', '2030', '2031'];
   document.getElementById('pvBody').innerHTML = `
-    <div class="pv-head"><div><h2 id="pvName">${esc(p.n)}${injTag(p)}</h2><p class="lede keep"><span class="rk">${rankTxt(p)}</span> · ${esc(p.t || 'Free agent')} · ${p.age != null ? p.age.toFixed(1) : '—'} yrs · ${p.o === 'Free agent' ? 'Free agent' : `<button type="button" class="tname sm" data-team="${esc(p.o)}">${esc(p.o)}</button>`}</p></div>
+    <div class="pv-head"><div><h2 id="pvName">${esc(p.n)}${injTag(p)}${ssTag(p)}</h2><p class="lede keep"><span class="rk">${rankTxt(p)}</span> · ${esc(p.t || 'Free agent')} · ${p.age != null ? p.age.toFixed(1) : '—'} yrs · ${p.o === 'Free agent' ? 'Free agent' : `<button type="button" class="tname sm" data-team="${esc(p.o)}">${esc(p.o)}</button>`}</p></div>
       <button type="button" class="pv-close" id="pvClose">Close</button></div>
     ${p.ol ? `<p><span class="chip ${p.ol.kind}">${OL_LABEL[p.ol.kind]}</span> ${esc(p.ol.text)}</p>` : ''}
     <div class="stats">
@@ -1549,18 +1612,20 @@ function openPlayer(id) {
       <div class="stat"><div class="k">Contender value</div><div class="v">${f0(p.c)}</div><div class="s">range ${f0(p.cl)} to ${f0(p.ch)}</div></div>
       <div class="stat"><div class="k">Rebuilder value</div><div class="v">${f0(p.rb)}</div><div class="s">to ${esc(ME)}: ${f0(valTo(ME, p))}</div></div>
       <div class="stat"><div class="k">Market value</div><div class="v">${f0(p.mv)}</div><div class="s">${p.mrank ? `market rank ${p.mrank} · ours ${p.orank}` : 'not ranked by the market'}</div></div>
+      ${sellBy(p) ? `<div class="stat"><div class="k">Sell by</div><div class="v">${SELL_LAB[sellBy(p).h]}</div><div class="s">${sellBy(p).h === 1 ? "2027 projects under half of this season's pace, near his position's age cliff" : sellBy(p).h < 6 ? `${SEASON_LAB[sellBy(p).h]} projected at ${Math.round(100 * sellBy(p).v[sellBy(p).h] / sellBy(p).best)}% of his best season` : 'holds 60%+ of his best season through 2031'}</div></div>` : ''}
       <div class="stat"><div class="k">Usage trend</div><div class="v">${p.tr ? (p.tr.dir > 0 ? '<span class="up">▲</span> Up' : p.tr.dir < 0 ? '<span class="dn">▼</span> Down' : 'Steady') : '—'}</div><div class="s">${p.tr ? `snaps ${pct(p.tr.sn[0])} → ${pct(p.tr.sn[1])}${p.tr.sh[0] != null ? ` · ${sn} ${pct(p.tr.sh[0])} → ${pct(p.tr.sh[1])}` : ''}` : 'needs 5+ full games'}</div></div>
     </div>
     ${p.po ? `<div class="panel"><h3>Fantasy playoffs, weeks 15 to 17</h3>
       <p class="lede keep">${f1(p.po.e)} expected points a week · ${f1(p.po.i)} if he plays every week · plays ${pct(p.po.a)} of playoff weeks on average</p>
       <div class="tw"><table><thead><tr><th>Week</th><th class="l">Opponent</th><th class="l">Matchup</th><th>Chance he plays</th><th>If he plays</th><th>Expected</th></tr></thead>
       <tbody>${p.po.w.map((w, i) => `<tr><td class="l"><b>Week ${PO_WEEKS[i]}</b></td>${w[0] ? `<td class="l">${w[1] ? 'vs' : '@'} ${esc(w[0])}</td><td class="l">${mTxt(w[2])}</td><td>${pct(w[3])}</td><td>${f1(p.po.h * w[2])}</td><td><b>${f1(p.po.h * w[2] * w[3])}</b></td>` : '<td class="l"><span class="chip">Bye</span></td><td></td><td></td><td></td><td><b>0.0</b></td>'}</tr>`).join('')}</tbody></table></div></div>` : ''}
+    <div class="panel"><h3>Value over time</h3>${valueChart(p.id)}</div>
     <div class="panel"><h3>2026 week by week</h3>
       <div class="legend"><span><i style="background:var(--accent)"></i>Fantasy points</span>${sn ? `<span><i style="background:var(--warn)"></i>${sn}</span>` : ''}<span><i style="background:var(--line)"></i>Left early with injury (not counted)</span></div>
       ${weekChart(p.w26 || [], {share: sn})}</div>
     <div class="panel"><h3>2025 week by week</h3>${weekChart((p.w25 || []).map(r => [r[0], r[1]]), {past: true})}</div>
-    <div class="panel"><h3>Projections</h3><div class="tw"><table><thead><tr><th>Season</th><th>PPG if healthy</th><th>10th to 90th</th><th>Healthy chance</th></tr></thead>
-      <tbody>${HZ.map(h => `<tr><td>${hz[h]}</td><td><b>${f1(p.proj[h])}</b></td><td>${f1(p.lo[h])} to ${f1(p.hi[h])}</td><td>${pct(p.ph[h])}</td></tr>`).join('')}</tbody></table></div></div>`;
+    <div class="panel"><h3>Projections</h3><div class="tw"><table><thead><tr><th>Season</th><th>PPG if healthy</th><th>10th to 90th</th><th>Healthy chance</th>${sellBy(p) ? '<th>Value vs best season</th>' : ''}</tr></thead>
+      <tbody>${HZ.map(h => `<tr><td>${hz[h]}</td><td><b>${f1(p.proj[h])}</b></td><td>${f1(p.lo[h])} to ${f1(p.hi[h])}</td><td>${pct(p.ph[h])}</td>${sellBy(p) ? `<td>${h ? pct(sellBy(p).v[h] / sellBy(p).best) : '—'}</td>` : ''}</tr>`).join('')}</tbody></table></div></div>`;
   // phone cards: label each cell with its column (main-view tables get this from labelTable)
   document.querySelectorAll('#pvBody table').forEach(t => { const hs = [...t.querySelectorAll('thead th')].map(th => th.textContent.trim());
     [...t.tBodies[0].rows].forEach(tr => [...tr.cells].forEach((td, i) => { if (hs[i]) td.dataset.label = hs[i]; })); });
@@ -1830,6 +1895,68 @@ function renderStudy() {
   const bind = (id, key, num) => el.querySelectorAll(`#${id} button`).forEach(b => b.addEventListener('click', () => { sState[key] = num ? +b.dataset.v : b.dataset.v; renderStudy(); }));
   bind('sRound', 'round'); bind('sYear', 'ppgYear', true); bind('sPos', 'pos');
 }
+
+// ---------- value history (history.json, packed daily from the history branch; default league only) ----------
+const DAY = 864e5, sgPct = x => x == null ? '—' : (x > 0.005 ? '+' : x < -0.005 ? '−' : '') + Math.abs(Math.round(x * 100)) + '%';
+const histOK = () => HIST && L && L.isDefault;
+const histSpan = () => histOK() ? (Date.parse(HIST.dates[HIST.dates.length - 1]) - Date.parse(HIST.dates[0])) / DAY : 0;
+const histReady = () => (histOK() ? histSpan() : 0) >= 14;
+const histStartTxt = () => { const d0 = HIST && HIST.dates.length ? new Date(Date.parse(HIST.dates[0]) + 14 * DAY) : null;
+  return d0 ? d0.toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) : 'two weeks after the first snapshot'; };
+// 4-week change (2 weeks minimum): market vs ours (your mode). Buy low: market fell 12%+ and ours held 10+ points
+// better. Sell high: market rose 12%+ and ours lagged by 10+ points.
+function histMove(id) {
+  if (!histReady()) return null;
+  const h = (id.startsWith('pk-') ? HIST.k : HIST.p)[id]; if (!h) return null;
+  const n = HIST.dates.length, tEnd = Date.parse(HIST.dates[n - 1]);
+  const j = HIST.dates.findIndex(d => tEnd - Date.parse(d) <= 28 * DAY);
+  if (j < 0 || tEnd - Date.parse(HIST.dates[j]) < 14 * DAY) return null;
+  const k = (L.teamBy.get(ME) || {}).mode === 'rebuilder' ? 1 : 0;
+  const o0 = h[k][j], o1 = h[k][n - 1], m0 = h[2][j], m1 = h[2][n - 1];
+  if (!m0 || m1 == null || !o0 || o1 == null || m0 < 300) return null;
+  const dm = m1 / m0 - 1, dO = o1 / o0 - 1;
+  return {dm, dO, days: Math.round((tEnd - Date.parse(HIST.dates[j])) / DAY),
+    flag: dm <= -0.12 && dO - dm >= 0.10 ? 'buy' : dm >= 0.12 && dm - dO >= 0.10 ? 'sell' : null};
+}
+const moveChip = f => f === 'buy' ? '<span class="chip gain">Buy low</span>' : f === 'sell' ? '<span class="chip out">Sell high</span>' : '';
+const moveCell = p => { const m = histMove(p.id); return m ? `<td data-v="${m.dm.toFixed(3)}" ${tipA(`Last ${m.days} days: market ${sgPct(m.dm)}, our value ${sgPct(m.dO)}`)}>${sgPct(m.dm)} <span class="mut">ours ${sgPct(m.dO)}</span>${m.flag ? '<br>' + moveChip(m.flag) : ''}</td>` : '<td data-v="-99">—</td>'; };
+function valueChart(id) {
+  if (!histOK()) return '<p class="empty">Value history is only kept for the CTESPN league.</p>';
+  const h = HIST.p[id], n = HIST.dates.length;
+  if (!h || n < 2) return `<p class="empty">Value history started ${HIST.dates[0] ? new Date(Date.parse(HIST.dates[0])).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}) : 'Nov 15'}. The chart fills in as days pass.</p>`;
+  const ks = L.mkScale || 1, ser = [h[0], h[1], h[2].map(v => v == null ? null : v * ks)];
+  const Wd = 600, Hh = 190, ml = 44, mr = 10, mt = 12, mb = 24, t0 = Date.parse(HIST.dates[0]), t1 = Date.parse(HIST.dates[n - 1]);
+  const top = Math.max(100, ...ser.flat().filter(v => v != null)) * 1.08;
+  const x = i => ml + (Date.parse(HIST.dates[i]) - t0) / Math.max(DAY, t1 - t0) * (Wd - ml - mr), y = v => mt + (1 - v / top) * (Hh - mt - mb);
+  let g = '';
+  for (let k = 0; k <= 4; k++) { const v = top * k / 4; g += `<line class="grid" x1="${ml}" x2="${Wd - mr}" y1="${y(v)}" y2="${y(v)}"/><text x="${ml - 6}" y="${y(v) + 4}" text-anchor="end">${f0(v)}</text>`; }
+  const lab = i => new Date(Date.parse(HIST.dates[i])).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'});
+  [0, Math.floor((n - 1) / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i).forEach((i, k, a) => { g += `<text x="${x(i)}" y="${Hh - 6}" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}">${lab(i)}</text>`; });
+  const col = ['var(--accent)', 'var(--warn)', 'var(--muted)'];
+  const lines = ser.map((vs, k) => { const pts = vs.map((v, i) => v == null ? null : `${x(i)},${y(v)}`).filter(Boolean);
+    return pts.length > 1 ? `<polyline class="ln ${k === 2 ? 'mk' : ''}" stroke="${col[k]}" points="${pts.join(' ')}"/>` : ''; }).join('');
+  const w = (Wd - ml - mr) / Math.max(1, n - 1);
+  const hits = HIST.dates.map((d, i) => `<rect class="hitr" x="${x(i) - w / 2}" y="${mt}" width="${w}" height="${Hh - mt - mb}" ${tipA(`<b>${lab(i)}</b><br>Contender ${f0(ser[0][i])}<br>Rebuilder ${f0(ser[1][i])}<br>Market ${f0(ser[2][i])}`)}/>`).join('');
+  return `<div class="legend"><span><i style="background:${col[0]}"></i>Contender</span><span><i style="background:${col[1]}"></i>Rebuilder</span><span><i style="background:${col[2]}"></i>Market</span></div>
+    <svg class="chart" viewBox="0 0 ${Wd} ${Hh}" role="img" aria-label="Value over time">${g}${lines}${hits}</svg>`;
+}
+fetch('history.json', {cache: 'no-cache'}).then(r => r.ok ? r.json() : null).then(h => {
+  if (!h || !h.dates || !h.dates.length) return; HIST = h;
+  if (L) { renderPlayers(); renderSignals(); renderTeam(); renderLeague(); }
+}).catch(() => {});
+
+// ---------- trade grades: each side's net value today, in its own mode (contender or rebuilder), and at market ----------
+function gradeTrade(tr) {
+  if (tr.sides.length !== 2) return null;
+  const got = s => ({pl: s.players.map(x => P[byId.get(x.id)]).filter(Boolean), pk: (s.pk || []).map(id => L.pickById.get(id)).filter(Boolean),
+    old: (s.pk || []).filter(id => !L.pickById.get(id)).length});
+  const g = tr.sides.map(got);
+  const val = (r, mode) => r.pl.reduce((a, p) => a + (ourVal(p, mode) || 0), 0) + r.pk.reduce((a, k) => a + pickVal(k, mode), 0);
+  const mk = r => r.pl.reduce((a, p) => a + (p.mv || 0), 0) + r.pk.reduce((a, k) => a + (k.mv || 0), 0);
+  return tr.sides.map((s, i) => { const t = L.teamBy.get(s.team), mode = t ? t.mode : 'contender', me = g[i], them = g[1 - i];
+    return {team: s.team, mode, net: val(me, mode) - val(them, mode), mk: L.market ? mk(me) - mk(them) : null, old: g[0].old + g[1].old}; });
+}
+const netTxt = v => v == null ? '—' : `<span class="${v > 0.5 ? 'up' : v < -0.5 ? 'dn' : ''}">${sgv(v)}</span>`;
 
 // ---------- routing ----------
 const TABS = ['team', 'week', 'players', 'trade', 'league', 'picks', 'study', 'signals', 'method'];

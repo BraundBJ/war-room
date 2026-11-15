@@ -80,6 +80,10 @@ jobs:
           if git diff --cached --quiet; then echo "no change"; exit 0; fi
           git -c user.name="github-actions[bot]" -c user.email="41898699+github-actions[bot]@users.noreply.github.com" commit -qm "Value snapshot $(date -u +%F)"
           git push -q origin HEAD:history
+      # the page reads its value history from here (charts, buy-low / sell-high flags)
+      - name: Pack value history
+        continue-on-error: true
+        run: python3 -I pipeline/history_pack.py hist/values public/history.json
       - uses: actions/cache/save@v4
         if: steps.mode.outputs.mode == 'full'
         with:

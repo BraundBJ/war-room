@@ -125,8 +125,10 @@ for t in trades:
     for rid in t["roster_ids"]:
         got = [{"id": p, "n": P.get(p, {}).get("full_name", p)} for p, rr in (t.get("adds") or {}).items() if rr == rid]
         gp = [f"{d['season']} round {d['round']}" for d in picks if d["owner_id"] == rid]
-        sides.append({"team": rid2name.get(rid), "players": got, "picks": gp})
-    log.append({"date": datetime.datetime.fromtimestamp(t["status_updated"] / 1000).strftime("%b %-d"), "sides": sides})
+        gk = [f"pk-{d['season']}-{d['round']}-{d['roster_id']}" for d in picks if d["owner_id"] == rid]
+        sides.append({"team": rid2name.get(rid), "players": got, "picks": gp, "pk": gk})
+    ts = datetime.datetime.fromtimestamp(t["status_updated"] / 1000)
+    log.append({"date": ts.strftime("%b %-d"), "iso": ts.date().isoformat(), "sides": sides})
 
 INJ = json.load(open(ROOT + "/stats/proj/injury_outlook.json"))
 for p in players:

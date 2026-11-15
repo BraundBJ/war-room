@@ -125,6 +125,13 @@ for h in range(2, MAXK + 1):
         clfh, _ = models[(pos, h)]
         _, reg1 = models[(pos, 1)]
         X = feats(P.loc[m, "age"], level[m], pos)
+        # young players: healthy chance can't fall faster year to year than the empirical curve for his age
+        # and level (separate per-horizon models disagree; e.g. 0.91 in 2028 then 0.41 in 2029 for no reason)
+        clfp, _ = models[(pos, h - 1)]
+        step = clfh.predict_proba(X)[:, 1] / np.maximum(clfp.predict_proba(X)[:, 1], 1e-6)
+        prev_ph = P.loc[m, f"phealthy{h - 1}"].values
+        ph = P.loc[m, f"phealthy{h}"].values
+        P.loc[m, f"phealthy{h}"] = np.where(young, np.maximum(ph, prev_ph * np.minimum(1, step)), ph)
         if h >= 4:
             s_ratio = clfh.predict_proba(X)[:, 1] / np.maximum(clf3.predict_proba(X)[:, 1], 1e-6)
             floor_ph = P.loc[m, "phealthy3"].values * np.minimum(1, s_ratio)
