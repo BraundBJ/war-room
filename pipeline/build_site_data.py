@@ -137,6 +137,14 @@ for p in players:
     if ol:
         p["ol"] = ol
 
+# fantasy playoffs, weeks 15-17 (playoff_proj.py): expected PPG, PPG if he plays, availability, opponents
+_PO = ROOT + "/stats/proj/playoff_proj.json"
+PO = json.load(open(_PO))["players"] if os.path.exists(_PO) else {}
+for p in players:
+    x = PO.get(p["id"])
+    if x:
+        p["po"] = {"e": x["ppg"], "h": x.get("h"), "i": x["ifp"], "a": x["av"], "w": [[w[1], w[2], w[3], w[4]] for w in x["wk"]]}
+
 # rookie picks (picks_value.py): same 0-10,000 scale; plus slot hit rates from the rookie study
 PK = json.load(open(ROOT + "/stats/proj/picks.json"))
 ordn = {1: "1st", 2: "2nd", 3: "3rd"}
@@ -168,12 +176,13 @@ for f in glob.glob(f"{LG}/matchups_*.json"):
               for m in (json.load(open(f)) or [])]
 raw = {"league": {"league_id": LID, "name": _lg.get("name"), "total_rosters": _lg.get("total_rosters"),
                   "roster_positions": _lg.get("roster_positions"), "season": _lg.get("season"),
-                  "settings": {k: (_lg.get("settings") or {}).get(k) for k in ("playoff_week_start", "playoff_teams", "draft_rounds", "num_teams")},
+                  "settings": {k: (_lg.get("settings") or {}).get(k) for k in ("playoff_week_start", "playoff_teams", "draft_rounds", "num_teams", "divisions")},
+                  "metadata": {k: v for k, v in (_lg.get("metadata") or {}).items() if k.startswith("division_")},
                   "scoring_settings": {k: (_lg.get("scoring_settings") or {}).get(k) for k in ("rec", "bonus_rec_te", "pass_td")}},
        "users": [{"user_id": u["user_id"], "display_name": u.get("display_name"), "metadata": {"team_name": (u.get("metadata") or {}).get("team_name")}}
                  for u in json.load(open(f"{LG}/league_{LID}_users.json"))],
        "rosters": [{"roster_id": r["roster_id"], "owner_id": r.get("owner_id"), "players": r.get("players") or [], "taxi": r.get("taxi") or [],
-                    "settings": {k: (r.get("settings") or {}).get(k) for k in ("wins", "losses", "ties", "fpts", "fpts_decimal")}}
+                    "settings": {k: (r.get("settings") or {}).get(k) for k in ("wins", "losses", "ties", "fpts", "fpts_decimal", "division")}}
                    for r in json.load(open(f"{LG}/league_{LID}_rosters.json"))],
        "traded_picks": json.load(open(f"{LG}/league_{LID}_traded_picks.json")),
        "matchups": _mu}

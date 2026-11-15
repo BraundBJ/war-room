@@ -32,6 +32,7 @@ if [ "$MODE" = light ]; then
   python3 injury_returns.py raw features.parquet "$R/players_nfl.json" "$IDS" proj/injury_outlook.json
   [ -s proj/week_model.pkl ] && python3 week_proj.py predict proj raw/games.csv "$R/players_nfl.json" "$IDS" || echo "no weekly model yet"
   python3 value.py proj/projections_2026.csv features.parquet "$IDS" "$R/league_${L}_rosters.json" "$R/league_${L}_users.json" proj/actual_values.csv
+  python3 playoff_proj.py proj raw/games.csv "$R/players_nfl.json" || echo "playoff projections skipped"
   python3 team_value.py proj/actual_values.csv proj/actual_values_settings.json "$R/league_${L}_rosters.json" "$R/league_${L}_users.json" proj
   python3 picks_value.py proj/picks.json
   python3 build_site_data.py "$WR_ROOT/site/data.json"
@@ -82,6 +83,7 @@ python3 project.py features.parquet raw/players.csv proj
 python3 extend_horizons.py features.parquet raw/players.csv proj/projections_2026.csv
 python3 -W ignore age_cliffs.py raw proj/projections_2026.csv
 python3 value.py proj/projections_2026.csv features.parquet "$IDS" "$R/league_${L}_rosters.json" "$R/league_${L}_users.json" proj/actual_values.csv
+python3 playoff_proj.py proj raw/games.csv "$R/players_nfl.json" || echo "playoff projections skipped"
 python3 team_value.py proj/actual_values.csv proj/actual_values_settings.json "$R/league_${L}_rosters.json" "$R/league_${L}_users.json" proj
 python3 picks_value.py proj/picks.json
 python3 build_site_data.py "$WR_ROOT/site/data.json"

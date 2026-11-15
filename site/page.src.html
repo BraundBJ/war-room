@@ -436,6 +436,11 @@ const pct = n => n == null || Number.isNaN(n) ? '—' : Math.round(n * 100) + '%
 const ord = n => n + ((n % 100 >= 11 && n % 100 <= 13) ? 'th' : ({1: 'st', 2: 'nd', 3: 'rd'}[n % 10] || 'th'));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const tipA = html => `data-tip="${esc(html)}"`;
+// fantasy playoffs, weeks 15-17: expected points per week (chance he plays x healthy PPG x matchup)
+const PO_WEEKS = [15, 16, 17];
+const mTxt = f => f >= 1.03 ? `good matchup, +${Math.round((f - 1) * 100)}%` : f <= 0.97 ? `tough matchup, ${Math.round((f - 1) * 100)}%` : 'average matchup';
+const poTip = p => p.po.w.map((w, i) => `Week ${PO_WEEKS[i]}: ${w[0] ? `${w[1] ? 'vs' : '@'} ${w[0]}, ${mTxt(w[2])}, plays ${pct(w[3])}` : 'bye'}`).join('<br>') + `<br>${f1(p.po.i)} PPG if he plays`;
+const poCell = p => p.po ? `<td data-v="${p.po.e}" ${tipA(poTip(p))}>${f1(p.po.e)}${p.po.a < 0.8 ? `<span class="mut"> · ${pct(p.po.a)}</span>` : ''}</td>` : '<td data-v="-1">—</td>';
 const store = {get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }};
 
 // ---------- random draws (common random numbers, same as the Python model) ----------
@@ -542,7 +547,7 @@ function buildTeams(raw) {
     const u = users.get(r.owner_id) || {}, s = r.settings || {};
     return {rid: r.roster_id, uid: r.owner_id, name: u.display_name || `Team ${r.roster_id}`, label: (u.metadata || {}).team_name || u.display_name || `Team ${r.roster_id}`,
       w: s.wins || 0, l: s.losses || 0, tie: s.ties || 0, pf: (s.fpts || 0) + (s.fpts_decimal || 0) / 100,
-      roster: (r.players || []).filter(id => byId.has(id)), taxi: (r.taxi || []).filter(id => byId.has(id))};
+      roster: (r.players || []).filter(id => byId.has(id)), taxi: (r.taxi || []).filter(id => byId.has(id)), div: s.division || null};
   });
   const seen = new Map();
   L.teams.forEach(t => { const k = t.name; if (seen.has(k)) t.name = `${k} (${t.rid})`; seen.set(k, 1); });
@@ -554,6 +559,9 @@ function buildTeams(raw) {
 }
 
 function teamMetrics() {
+  const ds = [...new Set(L.teams.map(t => t.div).filter(d => d != null))];
+  L.divs = ds.length > 1 ? ds.sort((a, b) => a - b) : null;
+  L.teams.forEach(t => { t.divName = t.div != null ? (L.divNames['division_' + t.div] || `Division ${t.div}`) : ''; });
   L.teams.forEach(t => { t.wk = lineupPts(t.roster, 0); t.projRos = t.wk * WEEKS[0]; });
   const z = xs => { const m = xs.reduce((a, b) => a + b, 0) / xs.length, sd = Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length) || 1; return xs.map(x => (x - m) / sd); };
   const zp = z(L.teams.map(t => t.pf)), zr = z(L.teams.map(t => t.projRos));
@@ -584,6 +592,7 @@ function simulateSeason() {
   const sigma = res.length > 30 ? Math.sqrt(res.reduce((a, x) => a + x * x, 0) / res.length) : 25;
   const NS = future.length ? 6000 : 1, r = mulberry(crc32(L.id + '-season'));
   const rankP = L.teams.map(() => new Float64Array(n)), winsSum = new Float64Array(n), pfSum = new Float64Array(n);
+  const divW = new Float64Array(n), pfW = new Float64Array(n);
   const wins = new Float64Array(n), pf = new Float64Array(n), off = new Float64Array(n), ord_ = [...Array(n).keys()];
   for (let s = 0; s < NS; s++) {
     for (let i = 0; i < n; i++) { const t = L.teams[i]; wins[i] = t.w + t.tie / 2; pf[i] = t.pf; off[i] = future.length ? gauss(r) * 6 : 0; }
@@ -591,17 +600,39 @@ function simulateSeason() {
       const sa = mean[a] + off[a] + gauss(r) * sigma, sb = mean[b] + off[b] + gauss(r) * sigma;
       pf[a] += sa; pf[b] += sb; if (sa > sb) wins[a]++; else wins[b]++;
     }
-    ord_.sort((x, y) => wins[y] - wins[x] || pf[y] - pf[x]);
-    ord_.forEach((i, k) => { rankP[i][k]++; winsSum[i] += wins[i]; pfSum[i] += pf[i]; });
+    const seeds = seedOrder(wins, pf, ord_);
+    seeds.forEach((i, k) => { rankP[i][k]++; winsSum[i] += wins[i]; pfSum[i] += pf[i]; });
+    if (L.divs) seeds.slice(0, L.divs.length).forEach(i => divW[i]++);
+    if (L.pfSpot && L.divs) pfW[seeds[L.playoffTeams - 1]]++;
   }
   const games = played + future.length;
   L.teams.forEach((t, i) => {
     const rp = Array.from(rankP[i], x => x / NS);
     t.sim = {rankP: rp, expW: winsSum[i] / NS, expL: games - winsSum[i] / NS, expPF: pfSum[i] / NS,
       pPO: rp.slice(0, L.playoffTeams).reduce((a, b) => a + b, 0), p1: rp[0], expRank: rp.reduce((a, p, k) => a + p * (k + 1), 0),
-      slotP: rp.slice().reverse()};   // rookie draft: worst record picks first
+      slotP: rp.slice().reverse(),   // rookie draft: worst record picks first
+      pDiv: divW[i] / NS, pPF: pfW[i] / NS};
   });
   L.simInfo = {weeksLeft: future.length, sigma, played, games};
+}
+
+// playoff seeds for one simulated season. CTESPN: the division winners (seeded by record), then the next
+// two best records, then the most points for among everyone left; non-playoff teams follow by record.
+// Other leagues: division winners plus best records if they have divisions, otherwise best records.
+function seedOrder(wins, pf, idx) {
+  const byRec = (x, y) => wins[y] - wins[x] || pf[y] - pf[x];
+  const all = idx.slice().sort(byRec);
+  if (!L.divs) return all;
+  const winners = L.divs.map(d => all.find(i => L.teams[i].div === d)).filter(i => i != null).sort(byRec);
+  const rest = all.filter(i => !winners.includes(i));
+  const nWC = Math.max(0, L.playoffTeams - winners.length);
+  let field;
+  if (L.pfSpot && nWC >= 1) {
+    const wc = rest.slice(0, nWC - 1), left = rest.slice(nWC - 1);
+    const pfTeam = left.slice().sort((x, y) => pf[y] - pf[x] || wins[y] - wins[x])[0];
+    field = [...winners, ...wc, pfTeam];
+  } else field = [...winners, ...rest.slice(0, nWC)];
+  return [...field, ...all.filter(i => !field.includes(i))];
 }
 
 // ---------- rookie picks ----------
@@ -777,7 +808,10 @@ function setLeague(raw, {isDefault = false, live = false, meUid = null} = {}) {
   const lg = raw.league, st = lg.settings || {}, sc = lg.scoring_settings || {};
   L = {id: String(lg.league_id), name: lg.name || 'League', raw, isDefault, live, matchups: raw.matchups || {},
        def: lineupDef(lg.roster_positions), rounds: Math.max(1, Math.min(5, st.draft_rounds || 3)),
-       playoffTeams: st.playoff_teams || 6, playoffStart: st.playoff_week_start || 15, rec: sc.rec ?? 1, teP: sc.bonus_rec_te || 0};
+       playoffTeams: st.playoff_teams || 6, playoffStart: st.playoff_week_start || 15, rec: sc.rec ?? 1, teP: sc.bonus_rec_te || 0,
+       divNames: lg.metadata || {},
+       // CTESPN: division winners, then the next two best records, then the most points for among the rest
+       pfSpot: String(lg.league_id) === M.leagueId};
   // replacement: the default league keeps the weekly model's level; any other league uses its real waiver wire
   // (the best players nobody rosters), capped at the starter-based level
   if (isDefault) L.repl = M.repl;
@@ -871,7 +905,7 @@ function finishChart(t) {
     const x = ml + k * bw, po = k < L.playoffTeams;
     g += `<rect class="bar ${po ? '' : 'past'}" x="${x + bw * .18}" y="${y(v)}" width="${bw * .64}" height="${Math.max(0, Hh - mb - y(v))}" rx="2"/>`;
     g += `<text x="${x + bw / 2}" y="${Hh - 8}" text-anchor="middle">${k + 1}</text>`;
-    g += `<rect class="hitr" x="${x}" y="${mt}" width="${bw}" height="${Hh - mt - mb}" ${tipA(`Finish ${ord(k + 1)}: <b>${pct(v)}</b>${po ? ' (playoffs)' : ''}`)}/>`;
+    g += `<rect class="hitr" x="${x}" y="${mt}" width="${bw}" height="${Hh - mt - mb}" ${tipA(`Seed ${k + 1}: <b>${pct(v)}</b>${po ? ' (playoffs)' : ''}`)}/>`;
   });
   return `<svg class="chart" viewBox="0 0 ${Wd} ${Hh}" role="img" aria-label="Chance of each final regular-season finish">${g}</svg>`;
 }
@@ -887,20 +921,20 @@ function renderTeam() {
   const rank = L.teams.slice().sort((a, b) => b.projRos - a.projRos).findIndex(x => x.name === t.name) + 1;
   const ks = t.picks.map(id => L.pickById.get(id)).filter(Boolean).sort((a, b) => a.season - b.season || a.round - b.round);
   const pickRb = ks.reduce((a, k) => a + k.rb, 0), plRb = roster.reduce((a, r) => a + (r.p.rb || 0), 0);
-  const row = r => `<tr>${plCell(r.p)}<td data-v="${r.p.ppg ?? -1}">${f1(r.p.ppg)}<span class="mut"> /${r.p.g}g</span></td><td>${f1(r.p.proj[0])}</td>${trCell(r.p)}${valCell(t.name, r.p)}<td>${f0(r.p.c)}</td><td>${f0(r.p.rb)}</td>${mkCells(r.p, mode)}${sigCell(r.p)}${olCell(r.p)}</tr>`;
+  const row = r => `<tr>${plCell(r.p)}<td data-v="${r.p.ppg ?? -1}">${f1(r.p.ppg)}<span class="mut"> /${r.p.g}g</span></td><td>${f1(r.p.proj[0])}</td>${poCell(r.p)}${trCell(r.p)}${valCell(t.name, r.p)}<td>${f0(r.p.c)}</td><td>${f0(r.p.rb)}</td>${mkCells(r.p, mode)}${sigCell(r.p)}${olCell(r.p)}</tr>`;
   document.getElementById('v-team').innerHTML = `
     <div class="teamhead"><div><h2>${esc(t.label)}</h2><p class="lede keep">${esc(t.name)} · ${modeChip(mode)} · values use ${mode} weights</p></div>
       ${mine ? '' : `<button type="button" class="more" id="backMine">Back to my team</button>`}</div>
     <div class="stats">
       <div class="stat"><div class="k">Record</div><div class="v">${t.w}-${t.l}${t.tie ? '-' + t.tie : ''}</div><div class="s">${f1(t.pf)} points for</div></div>
-      <div class="stat"><div class="k">Projected finish</div><div class="v">${t.sim.expRank.toFixed(1)}</div><div class="s">${f1(t.sim.expW)}-${f1(t.sim.expL)} · playoffs ${pct(t.sim.pPO)} · 1st ${pct(t.sim.p1)}</div></div>
+      <div class="stat"><div class="k">Playoff chance</div><div class="v">${pct(t.sim.pPO)}</div><div class="s">${f1(t.sim.expW)}-${f1(t.sim.expL)} projected${L.divs ? ` · win ${esc(t.divName)} ${pct(t.sim.pDiv)}` : ''} · top seed ${pct(t.sim.p1)}</div></div>
       <div class="stat"><div class="k">Rest of 2026</div><div class="v">${f0(t.projRos)}</div><div class="s">lineup points, ${ord(rank)} of ${L.teams.length}</div></div>
       <div class="stat"><div class="k">Future value</div><div class="v">${f0(plRb + pickRb)}</div><div class="s">rebuilder: players ${f0(plRb)} + picks ${f0(pickRb)}</div></div>
     </div>
     <div class="panel"><h3>Roster</h3>
-      <div class="tw"><table data-key="roster"><thead><tr><th>Player</th><th>2026 PPG</th><th>Rest of 2026</th><th>Trend</th><th>Value to ${who}</th><th>Contender</th><th>Rebuilder</th><th>Market</th><th>vs market</th><th>Signal</th><th class="l">Opportunity</th></tr></thead><tbody>${roster.map(row).join('')}</tbody></table></div></div>
+      <div class="tw"><table data-key="roster"><thead><tr><th>Player</th><th>2026 PPG</th><th>Rest of 2026</th><th>Playoff PPG</th><th>Trend</th><th>Value to ${who}</th><th>Contender</th><th>Rebuilder</th><th>Market</th><th>vs market</th><th>Signal</th><th class="l">Opportunity</th></tr></thead><tbody>${roster.map(row).join('')}</tbody></table></div></div>
     <div class="grid2">
-      <div class="panel"><h3>Finish odds</h3><div class="legend"><span><i style="background:var(--accent)"></i>Playoff spot</span><span><i style="background:var(--muted);opacity:.45"></i>Outside</span></div>${finishChart(t)}</div>
+      <div class="panel"><h3>Seed odds</h3><div class="legend"><span><i style="background:var(--accent)"></i>Playoff seed</span><span><i style="background:var(--muted);opacity:.45"></i>Outside</span></div>${finishChart(t)}</div>
       <div class="panel"><h3>Picks</h3>
         ${ks.length ? `<div class="tw"><table data-key="teampicks"><thead><tr><th>Pick</th><th>Slot</th><th>Contender</th><th>Rebuilder</th><th>Market</th></tr></thead><tbody>${ks.map(k => `<tr><td class="l" data-s="${k.season}${k.round}"><b>${esc(k.n)}</b></td><td>${slotLabel(k)}</td><td>${f0(k.c)}</td><td>${f0(k.rb)}</td><td>${f0(k.mv)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">No picks in 2027 to 2029.</p>'}</div>
       <div class="panel"><h3>Best additions for ${who}</h3>
@@ -992,7 +1026,7 @@ function fillOwner(sel) {
 const ownOK = (own, p) => !own || (own === '__fa' ? p.o === 'Free agent' : own === '__notme' ? p.o !== ME : p.o === own);
 const trOK = (tf, p) => !tf || (tf === 'up' ? p.tr && p.tr.dir > 0 : p.tr && p.tr.dir < 0);
 const COLS = [
-  ['n', 'Player', p => p.n], ['o', 'Owner', p => p.o], ['ppg', '2026 PPG', p => p.ppg], ['r0', 'Rest of 2026', p => p.proj[0]],
+  ['n', 'Player', p => p.n], ['o', 'Owner', p => p.o], ['ppg', '2026 PPG', p => p.ppg], ['r0', 'Rest of 2026', p => p.proj[0]], ['po', 'Playoff PPG', p => p.po ? p.po.e : null],
   ['tr', 'Trend', p => p.tr ? p.tr.score : null], ['r1', '2027 PPG', p => p.proj[1]], ['h1', 'Healthy 2027', p => p.ph[1]],
   ['c', 'Contender', p => p.c], ['rb', 'Rebuilder', p => p.rb], ['vt', 'Value to you', p => valTo(ME, p)],
   ['mv', 'Market', p => p.mv], ['gap', 'vs market', p => p.mv == null ? null : (ourVal(p, (L.teamBy.get(ME) || {}).mode) || 0) - p.mv],
@@ -1010,7 +1044,7 @@ function renderPlayers() {
   const mc = maxC();
   document.getElementById('pTable').innerHTML = `<thead><tr>${th}</tr></thead><tbody>${shown.map(p => `<tr>
     ${plCell(p)}${ownerCell(p)}<td>${f1(p.ppg)}<span class="mut"> /${p.g}g</span></td>
-    <td>${f1(p.proj[0])}</td>${trCell(p)}<td ${tipA(`10th to 90th percentile: ${f1(p.lo[1])} to ${f1(p.hi[1])}`)}>${f1(p.proj[1])}</td><td>${pct(p.ph[1])}</td>
+    <td>${f1(p.proj[0])}</td>${poCell(p)}${trCell(p)}<td ${tipA(`10th to 90th percentile: ${f1(p.lo[1])} to ${f1(p.hi[1])}`)}>${f1(p.proj[1])}</td><td>${pct(p.ph[1])}</td>
     <td ${tipA(`Range ${f0(p.cl)} to ${f0(p.ch)}`)}><b>${f0(p.c)}</b>${rangeBar(p.c || 0, p.cl || 0, p.ch || 0, mc)}</td><td>${f0(p.rb)}</td>
     ${valCell(ME, p)}${mkCells(p, mode)}${sigCell(p)}${olCell(p)}</tr>`).join('')}</tbody>`;
   document.querySelectorAll('#pTable th button').forEach(b => b.addEventListener('click', () => {
@@ -1268,14 +1302,14 @@ function renderLeague() {
   const si = L.simInfo;
   document.getElementById('v-league').innerHTML = `
     <div><h2>${esc(L.name)}</h2></div>
-    <div class="tw"><table data-key="league"><thead><tr><th>Team</th><th>Record</th><th>Points for</th><th>Projected record</th><th>Playoffs</th><th>1st place</th><th>Projected finish</th><th>Rest of 2026 pts</th><th class="l">Mode</th><th>Now value</th><th>Future value</th><th>Future rank</th><th>Pick value</th><th>Core age</th></tr></thead>
-    <tbody>${rows.map(r => `<tr>${teamCell(r.t.name)}<td data-v="${r.t.w + r.t.tie / 2}">${r.t.w}-${r.t.l}${r.t.tie ? '-' + r.t.tie : ''}</td><td>${f1(r.t.pf)}</td><td data-v="${r.t.sim.expW.toFixed(2)}">${f1(r.t.sim.expW)}-${f1(r.t.sim.expL)}</td><td data-v="${r.t.sim.pPO}"><b>${pct(r.t.sim.pPO)}</b></td><td data-v="${r.t.sim.p1}">${pct(r.t.sim.p1)}</td><td data-v="${r.t.sim.expRank}">${r.t.sim.expRank.toFixed(1)}</td><td>${f0(r.t.projRos)}</td><td class="l">${modeChip(r.t.mode)}</td><td>${f0(r.now)}</td><td><b>${f0(r.fut)}</b></td><td>${futRank.indexOf(r.t.name) + 1}</td><td>${f0(r.kr)}</td><td>${r.age ? r.age.toFixed(1) : '—'}</td></tr>`).join('')}</tbody></table></div>
-    <div class="legend"><span>Now value: contender values of players and picks</span><span>Future value: rebuilder values of players plus picks</span><span>${si.weeksLeft ? `Simulated ${si.weeksLeft} regular-season weeks left, 6,000 times` : 'Regular season complete'}</span></div>
-    <div class="panel"><h3>Final standings odds</h3>
+    <div class="tw"><table data-key="league"><thead><tr><th>Team</th><th>Record</th><th>Points for</th><th class="l">Division</th><th>Projected record</th><th>Playoffs</th><th>Win division</th><th>Top seed</th><th>Projected seed</th><th>Rest of 2026 pts</th><th class="l">Mode</th><th>Now value</th><th>Future value</th><th>Future rank</th><th>Pick value</th><th>Core age</th></tr></thead>
+    <tbody>${rows.map(r => `<tr>${teamCell(r.t.name)}<td data-v="${r.t.w + r.t.tie / 2}">${r.t.w}-${r.t.l}${r.t.tie ? '-' + r.t.tie : ''}</td><td>${f1(r.t.pf)}</td><td class="l">${esc(r.t.divName || '—')}</td><td data-v="${r.t.sim.expW.toFixed(2)}">${f1(r.t.sim.expW)}-${f1(r.t.sim.expL)}</td><td data-v="${r.t.sim.pPO}" ${tipA(L.pfSpot && L.divs ? `Division ${pct(r.t.sim.pDiv)} · points-for spot ${pct(r.t.sim.pPF)}` : '')}><b>${pct(r.t.sim.pPO)}</b></td><td data-v="${r.t.sim.pDiv || 0}">${L.divs ? pct(r.t.sim.pDiv) : '—'}</td><td data-v="${r.t.sim.p1}">${pct(r.t.sim.p1)}</td><td data-v="${r.t.sim.expRank}">${r.t.sim.expRank.toFixed(1)}</td><td>${f0(r.t.projRos)}</td><td class="l">${modeChip(r.t.mode)}</td><td>${f0(r.now)}</td><td><b>${f0(r.fut)}</b></td><td>${futRank.indexOf(r.t.name) + 1}</td><td>${f0(r.kr)}</td><td>${r.age ? r.age.toFixed(1) : '—'}</td></tr>`).join('')}</tbody></table></div>
+    <div class="legend"><span>Now value: contender values of players and picks</span><span>Future value: rebuilder values of players plus picks</span><span>${si.weeksLeft ? `Simulated ${si.weeksLeft} regular-season weeks left, 6,000 times` : 'Regular season complete'}</span>${L.pfSpot && L.divs ? '<span>Playoffs: 3 division winners, the next 2 best records, then the most points for among the rest</span>' : ''}</div>
+    <div class="panel"><h3>Playoff seed odds</h3>
       ${isCompact() ? heatStrip(rows.map(r => { const mx = r.t.sim.rankP.indexOf(Math.max(...r.t.sim.rankP));
-          return {title: `<button type="button" class="tname" data-team="${esc(r.t.name)}">${esc(r.t.label)}</button>`, meta: `playoffs ${pct(r.t.sim.pPO)} · most likely ${ord(mx + 1)}`, p: r.t.sim.rankP, tip: esc(r.t.label)}; }), n, k => k + 1, 'Chance (%) of each final regular-season finish') :
-      `<div class="tw"><table data-key="finish"><thead><tr><th>Team</th>${Array.from({length: n}, (_, k) => `<th>${ord(k + 1)}</th>`).join('')}</tr></thead>
-      <tbody>${rows.map(r => `<tr>${teamCell(r.t.name)}${r.t.sim.rankP.map((v, k) => heatTd(v, `${esc(r.t.label)} finishes ${ord(k + 1)}: <b>${pct(v)}</b>`, v >= 0.005 ? pct(v) : '')).join('')}</tr>`).join('')}</tbody></table></div>`}</div>
+          return {title: `<button type="button" class="tname" data-team="${esc(r.t.name)}">${esc(r.t.label)}</button>`, meta: `playoffs ${pct(r.t.sim.pPO)} · most likely seed ${mx + 1}`, p: r.t.sim.rankP, tip: esc(r.t.label) + ' seed'}; }), n, k => k + 1, L.pfSpot && L.divs ? 'Chance (%) of each seed: 1-3 division winners, 4-5 best other records, 6 most points for' : 'Chance (%) of each seed') :
+      `<div class="tw"><table data-key="finish"><thead><tr><th>Team</th>${Array.from({length: n}, (_, k) => `<th>Seed ${k + 1}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(r => `<tr>${teamCell(r.t.name)}${r.t.sim.rankP.map((v, k) => heatTd(v, `${esc(r.t.label)}, seed ${k + 1}: <b>${pct(v)}</b>`, v >= 0.005 ? pct(v) : '')).join('')}</tr>`).join('')}</tbody></table></div>`}</div>
     <div class="panel"><h3>Trade log</h3><div class="log">${log || '<p class="empty">No trades yet.</p>'}</div></div>`;
 }
 
@@ -1386,8 +1420,8 @@ document.addEventListener('click', e => {
   sortState.set(k, {i, dir}); tbl.tBodies[0].dataset.sorted = ''; sortTable(tbl);
 });
 // on phones each card shows the most useful fields first; the rest open with a tap
-const CARD_KEYS = ['You send', 'From', 'Your gain', 'Market: get / send', 'Why', 'Owner', 'Pick owner', 'Record', 'Playoffs', 'Projected finish',
-  'Value to you', 'Value to them', 'Contender', 'Rebuilder', 'Market', 'Trend', 'Rest of 2026', 'Expected PPG', 'Signal',
+const CARD_KEYS = ['You send', 'From', 'Your gain', 'Market: get / send', 'Why', 'Owner', 'Pick owner', 'Record', 'Playoffs', 'Win division', 'Projected seed',
+  'Value to you', 'Value to them', 'Contender', 'Rebuilder', 'Market', 'Trend', 'Rest of 2026', 'Playoff PPG', 'Expected PPG', 'Signal',
   'Hit rate', 'Star', 'Bust', '3-year PPG', 'Trend per year', 'Projected slot', 'Picks', 'Firsts', 'Now value', 'Future value', 'Slot', ''];
 const CARD_MAX = 6;
 function labelTable(t) {
@@ -1483,12 +1517,19 @@ function openPlayer(id) {
       <div class="stat"><div class="k">Market value</div><div class="v">${f0(p.mv)}</div><div class="s">${p.mrank ? `market rank ${p.mrank} · ours ${p.orank}` : 'not ranked by the market'}</div></div>
       <div class="stat"><div class="k">Usage trend</div><div class="v">${p.tr ? (p.tr.dir > 0 ? '<span class="up">▲</span> Up' : p.tr.dir < 0 ? '<span class="dn">▼</span> Down' : 'Steady') : '—'}</div><div class="s">${p.tr ? `snaps ${pct(p.tr.sn[0])} → ${pct(p.tr.sn[1])}${p.tr.sh[0] != null ? ` · ${sn} ${pct(p.tr.sh[0])} → ${pct(p.tr.sh[1])}` : ''}` : 'needs 5+ full games'}</div></div>
     </div>
+    ${p.po ? `<div class="panel"><h3>Fantasy playoffs, weeks 15 to 17</h3>
+      <p class="lede keep">${f1(p.po.e)} expected points a week · ${f1(p.po.i)} if he plays every week · plays ${pct(p.po.a)} of playoff weeks on average</p>
+      <div class="tw"><table><thead><tr><th>Week</th><th class="l">Opponent</th><th class="l">Matchup</th><th>Chance he plays</th><th>If he plays</th><th>Expected</th></tr></thead>
+      <tbody>${p.po.w.map((w, i) => `<tr><td class="l"><b>Week ${PO_WEEKS[i]}</b></td>${w[0] ? `<td class="l">${w[1] ? 'vs' : '@'} ${esc(w[0])}</td><td class="l">${mTxt(w[2])}</td><td>${pct(w[3])}</td><td>${f1(p.po.h * w[2])}</td><td><b>${f1(p.po.h * w[2] * w[3])}</b></td>` : '<td class="l"><span class="chip">Bye</span></td><td></td><td></td><td></td><td><b>0.0</b></td>'}</tr>`).join('')}</tbody></table></div></div>` : ''}
     <div class="panel"><h3>2026 week by week</h3>
       <div class="legend"><span><i style="background:var(--accent)"></i>Fantasy points</span>${sn ? `<span><i style="background:var(--warn)"></i>${sn}</span>` : ''}<span><i style="background:var(--line)"></i>Left early with injury (not counted)</span></div>
       ${weekChart(p.w26 || [], {share: sn})}</div>
     <div class="panel"><h3>2025 week by week</h3>${weekChart((p.w25 || []).map(r => [r[0], r[1]]), {past: true})}</div>
     <div class="panel"><h3>Projections</h3><div class="tw"><table><thead><tr><th>Season</th><th>PPG if healthy</th><th>10th to 90th</th><th>Healthy chance</th></tr></thead>
       <tbody>${HZ.map(h => `<tr><td>${hz[h]}</td><td><b>${f1(p.proj[h])}</b></td><td>${f1(p.lo[h])} to ${f1(p.hi[h])}</td><td>${pct(p.ph[h])}</td></tr>`).join('')}</tbody></table></div></div>`;
+  // phone cards: label each cell with its column (main-view tables get this from labelTable)
+  document.querySelectorAll('#pvBody table').forEach(t => { const hs = [...t.querySelectorAll('thead th')].map(th => th.textContent.trim());
+    [...t.tBodies[0].rows].forEach(tr => [...tr.cells].forEach((td, i) => { if (hs[i]) td.dataset.label = hs[i]; })); });
   document.getElementById('pvClose').addEventListener('click', () => pv.close());
   if (!pv.open) pv.showModal();
 }
