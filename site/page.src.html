@@ -401,7 +401,7 @@ body.compact .tw td { font-size: 12.5px; }
       <h3>Picks</h3>
       <p>Each slot's value is the average lineup value that players taken there produced in their first three seasons, scored in this league's format. Slots that rest on few distinct players, like 1.01, are pulled toward a smooth curve across all slots, so a few great or terrible classes don't set the price. Picks add their value directly in trades rather than through the lineup simulation.</p>
       <h3>Season simulator</h3>
-      <p>The rest of the regular season is played 6,000 times on the league's real schedule from Sleeper. Each team's weekly score is its projected lineup (the same week-by-week simulation as everything else), nudged a quarter of the way toward how it has actually scored, plus team-level uncertainty and the league's own week-to-week spread. Ties in record break on points for. The projected 2027 rookie draft order is the reverse of the final regular-season standings, so it doesn't account for playoff results or lotteries.</p>
+      <p>The rest of the regular season is played 6,000 times on the league's real schedule from Sleeper. Each team's weekly score is its projected lineup (the same week-by-week simulation as everything else), nudged a quarter of the way toward how it has actually scored, plus team-level uncertainty and the league's own week-to-week spread. Ties in record break on points for. In CTESPN the three division winners and the next two best records make the playoffs and are seeded 1 to 5 by record; the sixth seed is the most points for among everyone else. The projected 2027 rookie draft order is the reverse of the final regular-season standings, so it doesn't account for playoff results or lotteries.</p>
       <h3>Team rankings</h3>
       <p>Now value adds up contender values of each roster's players and picks. Future value adds up rebuilder values of players and picks, so draft capital counts toward a team's future.</p>
       <h3>Trends</h3>
@@ -659,8 +659,8 @@ function simulateSeason() {
   L.simInfo = {weeksLeft: future.length, sigma, played, games};
 }
 
-// playoff seeds for one simulated season. CTESPN: the division winners (seeded by record), then the next
-// two best records, then the most points for among everyone left; non-playoff teams follow by record.
+// playoff seeds for one simulated season. CTESPN: the division winners and the next two best records get in
+// and are seeded 1-5 by record; seed 6 is the most points for among everyone left; the rest follow by record.
 // Other leagues: division winners plus best records if they have divisions, otherwise best records.
 function seedOrder(wins, pf, idx) {
   const byRec = (x, y) => wins[y] - wins[x] || pf[y] - pf[x];
@@ -673,7 +673,7 @@ function seedOrder(wins, pf, idx) {
   if (L.pfSpot && nWC >= 1) {
     const wc = rest.slice(0, nWC - 1), left = rest.slice(nWC - 1);
     const pfTeam = left.slice().sort((x, y) => pf[y] - pf[x] || wins[y] - wins[x])[0];
-    field = [...winners, ...wc, pfTeam];
+    field = [...[...winners, ...wc].sort(byRec), pfTeam];  // seeds 1-5 by record, 6 = points-for spot
   } else field = [...winners, ...rest.slice(0, nWC)];
   return [...field, ...all.filter(i => !field.includes(i))];
 }
@@ -854,7 +854,7 @@ function setLeague(raw, {isDefault = false, live = false, meUid = null} = {}) {
        def: lineupDef(lg.roster_positions), rounds: Math.max(1, Math.min(5, st.draft_rounds || 3)),
        playoffTeams: st.playoff_teams || 6, playoffStart: st.playoff_week_start || 15, rec: sc.rec ?? 1, teP: sc.bonus_rec_te || 0,
        divNames: lg.metadata || {},
-       // CTESPN: division winners, then the next two best records, then the most points for among the rest
+       // CTESPN: division winners and the next two best records (seeded 1-5 by record), then the most points for among the rest
        pfSpot: String(lg.league_id) === M.leagueId};
   // replacement: the default league keeps the weekly model's level; any other league uses its real waiver wire
   // (the best players nobody rosters), capped at the starter-based level
@@ -1385,10 +1385,10 @@ function renderLeague() {
     <div><h2>${esc(L.name)}</h2></div>
     <div class="tw"><table data-key="league"><thead><tr><th>Team</th><th>Record</th><th>Points for</th><th class="l">Division</th><th>Projected record</th><th>Playoffs</th><th>Win division</th><th>Top seed</th><th>Projected seed</th><th>Rest of 2026 pts</th><th>Playoff lineup</th><th class="l">Mode</th><th>Now value</th><th>Future value</th><th>Future rank</th><th>Pick value</th><th>Core age</th></tr></thead>
     <tbody>${rows.map(r => `<tr>${teamCell(r.t.name)}<td data-v="${r.t.w + r.t.tie / 2}">${r.t.w}-${r.t.l}${r.t.tie ? '-' + r.t.tie : ''}</td><td>${f1(r.t.pf)}</td><td class="l">${esc(r.t.divName || '—')}</td><td data-v="${r.t.sim.expW.toFixed(2)}">${f1(r.t.sim.expW)}-${f1(r.t.sim.expL)}</td><td data-v="${r.t.sim.pPO}" ${tipA(L.pfSpot && L.divs ? `Division ${pct(r.t.sim.pDiv)} · points-for spot ${pct(r.t.sim.pPF)}` : '')}><b>${pct(r.t.sim.pPO)}</b></td><td data-v="${r.t.sim.pDiv || 0}">${L.divs ? pct(r.t.sim.pDiv) : '—'}</td><td data-v="${r.t.sim.p1}">${pct(r.t.sim.p1)}</td><td data-v="${r.t.sim.expRank}">${r.t.sim.expRank.toFixed(1)}</td><td>${f0(r.t.projRos)}</td><td data-v="${playoffLineup(r.t) ?? -1}" ${tipA('Best lineup, average points a week in weeks 15 to 17: ' + (poRank(r.t) ? ord(poRank(r.t)) + ' of ' + n : '—'))}>${f1(playoffLineup(r.t))}</td><td class="l">${modeChip(r.t.mode)}</td><td>${f0(r.now)}</td><td><b>${f0(r.fut)}</b></td><td>${futRank.indexOf(r.t.name) + 1}</td><td>${f0(r.kr)}</td><td>${r.age ? r.age.toFixed(1) : '—'}</td></tr>`).join('')}</tbody></table></div>
-    <div class="legend"><span>Now value: contender values of players and picks</span><span>Future value: rebuilder values of players plus picks</span><span>${si.weeksLeft ? `Simulated ${si.weeksLeft} regular-season weeks left, 6,000 times` : 'Regular season complete'}</span>${L.pfSpot && L.divs ? '<span>Playoffs: 3 division winners, the next 2 best records, then the most points for among the rest</span>' : ''}</div>
+    <div class="legend"><span>Now value: contender values of players and picks</span><span>Future value: rebuilder values of players plus picks</span><span>${si.weeksLeft ? `Simulated ${si.weeksLeft} regular-season weeks left, 6,000 times` : 'Regular season complete'}</span>${L.pfSpot && L.divs ? '<span>Playoffs: 3 division winners and the next 2 best records, seeded 1-5 by record; seed 6 is the most points for among the rest</span>' : ''}</div>
     <div class="panel"><h3>Playoff seed odds</h3>
       ${isCompact() ? heatStrip(rows.map(r => { const mx = r.t.sim.rankP.indexOf(Math.max(...r.t.sim.rankP));
-          return {title: `<button type="button" class="tname" data-team="${esc(r.t.name)}">${esc(r.t.label)}</button>`, meta: `playoffs ${pct(r.t.sim.pPO)} · most likely seed ${mx + 1}`, p: r.t.sim.rankP, tip: esc(r.t.label) + ' seed'}; }), n, k => k + 1, L.pfSpot && L.divs ? 'Chance (%) of each seed: 1-3 division winners, 4-5 best other records, 6 most points for' : 'Chance (%) of each seed') :
+          return {title: `<button type="button" class="tname" data-team="${esc(r.t.name)}">${esc(r.t.label)}</button>`, meta: `playoffs ${pct(r.t.sim.pPO)} · most likely seed ${mx + 1}`, p: r.t.sim.rankP, tip: esc(r.t.label) + ' seed'}; }), n, k => k + 1, L.pfSpot && L.divs ? 'Chance (%) of each seed: 1-5 by record (division winners guaranteed a spot), 6 most points for' : 'Chance (%) of each seed') :
       `<div class="tw"><table data-key="finish"><thead><tr><th>Team</th>${Array.from({length: n}, (_, k) => `<th>Seed ${k + 1}</th>`).join('')}</tr></thead>
       <tbody>${rows.map(r => `<tr>${teamCell(r.t.name)}${r.t.sim.rankP.map((v, k) => heatTd(v, `${esc(r.t.label)}, seed ${k + 1}: <b>${pct(v)}</b>`, v >= 0.005 ? pct(v) : '')).join('')}</tr>`).join('')}</tbody></table></div>`}</div>
     <div class="panel"><h3>Contention window</h3>
