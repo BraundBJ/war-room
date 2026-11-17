@@ -69,14 +69,21 @@ jobs:
           MODE: ${{ steps.mode.outputs.mode }}
         run: ./run.sh
       # one small file a day of every player's and pick's values, kept on the history branch (never rebuilt later)
+      # plus the projection tracker: each week's last pre-game projections, scored once the week is played
       - name: Save value snapshot
         continue-on-error: true
+        env:
+          WR_ROOT: ${{ github.workspace }}/work
         run: |
           git fetch -q --depth=1 origin history
           git worktree add -q --detach hist FETCH_HEAD
           python3 -I pipeline/snapshot.py work/site/data.json hist/values
+          mkdir -p hist/track
+          python3 -I pipeline/proj_track.py save work/stats/proj/week_proj.json hist/track || echo "projection save skipped"
+          if [ -f work/stats/weekly_rows.parquet ]; then python3 -I pipeline/proj_track.py backfill work/stats/weekly_rows.parquet work/stats/proj/week_model.pkl work/rookie/raw/db_playerids.csv hist/track || echo "backfill skipped"; fi
+          python3 -I pipeline/proj_track.py score hist/track public/track.json || echo "scoring skipped"
           cd hist
-          git add values
+          git add values track
           if git diff --cached --quiet; then echo "no change"; exit 0; fi
           git -c user.name="github-actions[bot]" -c user.email="41898699+github-actions[bot]@users.noreply.github.com" commit -qm "Value snapshot $(date -u +%F)"
           git push -q origin HEAD:history

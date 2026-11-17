@@ -1094,7 +1094,8 @@ function renderWeek() {
       <div class="controls"><div class="seg" id="wkPos" role="group" aria-label="Position">${['', 'QB', 'RB', 'WR', 'TE', 'FLEX'].map(v => `<button type="button" data-v="${v}" aria-pressed="${wkPos === v}">${v || 'All'}</button>`).join('')}</div></div>
       <div class="tw tall"><table data-key="wk-all"><thead><tr><th>Player</th><th class="l">Owner</th><th>Expected</th><th>If he plays</th><th>Floor–ceiling</th><th>Plays</th><th>Opponent</th><th>Team total</th><th>Matchup</th></tr></thead><tbody>
       ${rows.map(p => { const w = wp(p.id); return `<tr>${plCell(p)}${ownerCell(p)}<td data-v="${w.x}"><b>${f1(w.x)}</b>${statusChip(w)}</td><td>${f1(w.p)}</td><td data-v="${w.hi}">${f1(w.lo)}–${f1(w.hi)}</td><td data-v="${w.pl}">${pct(w.pl)}</td><td class="l">${oppTxt(w)}</td><td>${w.it != null ? f1(w.it) : '—'}</td><td data-v="${w.oa}" class="${w.oa >= 1.08 ? 'num-good' : w.oa <= 0.92 ? 'num-bad' : ''}">${sg(w.oa * 100 - 100)}%</td></tr>`; }).join('')}</tbody></table></div>
-      <div class="legend"><span>Held-out average miss: ${WK.mae} points per player-game</span><span>Matchup %: how much more (+) or less (−) the opponent allows to the position than average</span></div></div>`;
+      <div class="legend"><span>Held-out average miss: ${WK.mae} points per player-game</span><span>Matchup %: how much more (+) or less (−) the opponent allows to the position than average</span></div></div>
+    ${trackPanel()}`;
   el.querySelectorAll('#wkPos button').forEach(b => b.addEventListener('click', () => { wkPos = b.dataset.v; renderWeek(); }));
 }
 
@@ -1972,6 +1973,29 @@ fetch('history.json', {cache: 'no-cache'}).then(r => r.ok ? r.json() : null).the
   if (!h || !h.dates || !h.dates.length) return; HIST = h;
   if (L) { renderPlayers(); renderSignals(); renderTeam(); renderLeague(); }
 }).catch(() => {});
+
+// ---------- projection tracker (track.json: each week's last pre-game projections vs what happened) ----------
+let TRACK = null;
+function trackPanel() {
+  if (!TRACK || !TRACK.weeks || !TRACK.weeks.length || !L.isDefault) return '';
+  const W = TRACK.weeks, n = W.reduce((a, x) => a + x.n, 0), avg = k => W.reduce((a, x) => a + x[k] * x.n, 0) / n;
+  const live = W.filter(x => x.src === 'live').length, nm = id => { const q = P[byId.get(id)]; return q ? `<button type="button" class="pname" data-pid="${q.id}">${esc(q.n)}</button>` : 'Player'; };
+  const sg = v => v == null ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1);
+  const lastW = W[W.length - 1].w;
+  return `<div class="panel"><h3>How the projections have done</h3>
+    <div class="stats">
+      <div class="stat"><div class="k">Our average miss</div><div class="v">${avg('mae').toFixed(2)}</div><div class="s">points per player, ${n.toLocaleString()} player-games</div></div>
+      <div class="stat"><div class="k">Sleeper's average miss</div><div class="v">${avg('maeS').toFixed(2)}</div><div class="s">same players and weeks</div></div>
+      <div class="stat"><div class="k">Closer than Sleeper</div><div class="v">${pct(avg('closer'))}</div><div class="s">of players</div></div>
+      <div class="stat"><div class="k">Bias</div><div class="v">${sg(avg('bias'))}</div><div class="s">actual minus our projection, per player</div></div>
+    </div>
+    <div class="tw"><table data-key="track-weeks"><thead><tr><th class="l">Week</th><th class="l">Type</th><th>Players</th><th>Our miss</th><th>Sleeper miss</th><th>Closer than Sleeper</th><th>Bias</th><th>Inside our range</th><th>Bias, Questionable</th></tr></thead>
+    <tbody>${W.slice().reverse().map(x => `<tr><td class="l"><b>Week ${x.w}</b></td><td class="l">${x.src === 'live' ? '<span class="chip gain">Live</span>' : '<span class="chip">Backtest</span>'}</td><td>${x.n}</td><td data-v="${x.mae}"><b class="${x.mae <= x.maeS ? 'num-good' : ''}">${x.mae.toFixed(2)}</b></td><td>${x.maeS.toFixed(2)}</td><td data-v="${x.closer}">${pct(x.closer)}</td><td data-v="${x.bias}">${sg(x.bias)}</td><td data-v="${x.cover}">${pct(x.cover)}</td><td>${x.nq ? `${sg(x.biasQ)} <span class="mut">(${x.nq})</span>` : '—'}</td></tr>`).join('')}</tbody></table></div>
+    ${Object.keys(TRACK.pos || {}).length ? `<div class="tw"><table data-key="track-pos"><thead><tr><th class="l">Position</th><th>Players</th><th>Our miss</th><th>Sleeper miss</th><th>Bias</th></tr></thead><tbody>${Object.entries(TRACK.pos).map(([k, x]) => `<tr><td class="l"><b>${k}</b></td><td>${x.n}</td><td><b class="${x.mae <= x.maeS ? 'num-good' : ''}">${x.mae.toFixed(2)}</b></td><td>${x.maeS.toFixed(2)}</td><td>${sg(x.bias)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${TRACK.misses && TRACK.misses.length ? `<h3>Biggest misses, week ${lastW}</h3><div class="tw"><table data-key="track-miss"><thead><tr><th>Player</th><th>Ours</th><th>Sleeper</th><th>Actual</th></tr></thead><tbody>${TRACK.misses.map(m => `<tr><td>${nm(m.id)}</td><td>${f1(m.p)}</td><td>${f1(m.s)}</td><td><b>${f1(m.a)}</b></td></tr>`).join('')}</tbody></table></div>` : ''}
+    <div class="legend"><span>Each week's last projection saved before his game, scored on players who played with a projection of 5+ (ours or Sleeper's)</span><span>Backtest weeks: what the weekly model would have said, trained only on 2016-2025${live ? '' : '; live tracking starts week 11'}</span><span>Bias above zero: players scored more than we projected</span><span>Inside our range: actual between our 10th and 90th percentile (aim: 80%)</span></div></div>`;
+}
+fetch('track.json', {cache: 'no-cache'}).then(r => r.ok ? r.json() : null).then(t => { if (t && t.weeks) { TRACK = t; if (L) renderWeek(); } }).catch(() => {});
 
 // ---------- trade grades: each side's net value today, in its own mode (contender or rebuilder), and at market ----------
 function gradeTrade(tr) {
