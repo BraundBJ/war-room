@@ -413,7 +413,7 @@ body.compact .tw td { font-size: 12.5px; }
       <h3>League trades</h3>
       <p>Placeholder trades are filtered out: round trips between the same two teams within three weeks, FAAB-only swaps, startup pick swaps, and the McCarthy for Carson Beck trade.</p>
       <h3>Fantasy playoffs</h3>
-      <p>Playoff PPG is a player's expected points per week in weeks 15 to 17: his healthy rest-of-season PPG, times his chance of playing that week (injury timeline and usual availability), times a matchup factor. The matchup factor is how many points that defense allows his position this season, scaled by how much defense moved scoring in 2016-2025 games: most for RBs and QBs, least for TEs. A bye week counts as zero. Playoff lineup is a team's best lineup each of those weeks, averaged.</p>
+      <p>Playoff PPG is what a player should average in weeks 15 to 17 when he plays: his healthy rest-of-season PPG times a matchup factor. His chance of playing each week (injury timeline and usual availability, calibrated so healthy starters play 86% of those games, as they did in 2016-2025) shows separately, and the hover adds expected points counting missed games. The matchup factor is how many points that defense allows his position this season, scaled by how much defense moved scoring in 2016-2025 games: most for RBs and QBs, least for TEs. A bye week counts as zero. Playoff lineup is a team's best lineup each of those weeks by expected points (so injuries count), averaged.</p>
       <h3>Contention window</h3>
       <p>Each team's projected starting lineup points a week now and in 2027, 2028 and 2029, with each player's chance of being healthy. Only current players count, so teams with many picks look weaker in later years than they will be.</p>
       <h3>Sell by</h3>
@@ -454,8 +454,8 @@ const tipA = html => `data-tip="${esc(html)}"`;
 // fantasy playoffs, weeks 15-17: expected points per week (chance he plays x healthy PPG x matchup)
 const PO_WEEKS = [15, 16, 17];
 const mTxt = f => f >= 1.03 ? `good matchup, +${Math.round((f - 1) * 100)}%` : f <= 0.97 ? `tough matchup, ${Math.round((f - 1) * 100)}%` : 'average matchup';
-const poTip = p => p.po.w.map((w, i) => `Week ${PO_WEEKS[i]}: ${w[0] ? `${w[1] ? 'vs' : '@'} ${w[0]}, ${mTxt(w[2])}, plays ${pct(w[3])}` : 'bye'}`).join('<br>') + `<br>${f1(p.po.i)} PPG if he plays`;
-const poCell = p => p.po ? `<td data-v="${p.po.e}" ${tipA(poTip(p))}>${f1(p.po.e)}${p.po.a < 0.8 ? `<span class="mut"> · ${pct(p.po.a)}</span>` : ''}</td>` : '<td data-v="-1">—</td>';
+const poTip = p => `<b>${f1(p.po.i)} PPG if he plays</b><br>` + p.po.w.map((w, i) => `Week ${PO_WEEKS[i]}: ${w[0] ? `${w[1] ? 'vs' : '@'} ${w[0]}, ${mTxt(w[2])}, plays ${pct(w[3])}` : 'bye'}`).join('<br>') + `<br>${f1(p.po.e)} expected a week, counting the chance he misses games`;
+const poCell = p => p.po ? `<td data-v="${p.po.i}" ${tipA(poTip(p))}>${f1(p.po.i)}${p.po.a < 0.8 ? `<span class="mut"> · plays ${pct(p.po.a)}</span>` : ''}</td>` : '<td data-v="-1">—</td>';
 const store = {get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }};
 
 // ---------- random draws (common random numbers, same as the Python model) ----------
@@ -1102,7 +1102,7 @@ function fillOwner(sel) {
 const ownOK = (own, p) => !own || (own === '__fa' ? p.o === 'Free agent' : own === '__notme' ? p.o !== ME : p.o === own);
 const trOK = (tf, p) => !tf || (tf === 'up' ? p.tr && p.tr.dir > 0 : p.tr && p.tr.dir < 0);
 const COLS = [
-  ['n', 'Player', p => p.n], ['o', 'Owner', p => p.o], ['ppg', '2026 PPG', p => p.ppg], ['r0', 'Rest of 2026', p => p.proj[0]], ['po', 'Playoff PPG', p => p.po ? p.po.e : null],
+  ['n', 'Player', p => p.n], ['o', 'Owner', p => p.o], ['ppg', '2026 PPG', p => p.ppg], ['r0', 'Rest of 2026', p => p.proj[0]], ['po', 'Playoff PPG', p => p.po ? p.po.i : null],
   ['tr', 'Trend', p => p.tr ? p.tr.score : null], ['r1', '2027 PPG', p => p.proj[1]], ['h1', 'Healthy 2027', p => p.ph[1]],
   ['c', 'Contender', p => p.c], ['rb', 'Rebuilder', p => p.rb], ['sb', 'Sell by', p => (sellBy(p) || {}).h ?? null], ['vt', 'Value to you', p => valTo(ME, p)],
   ['mv', 'Market', p => p.mv], ['gap', 'vs market', p => p.mv == null ? null : (ourVal(p, (L.teamBy.get(ME) || {}).mode) || 0) - p.mv], ['mv4', '4-week move', p => (histMove(p.id) || {}).dm ?? null],
@@ -1616,7 +1616,7 @@ function openPlayer(id) {
       <div class="stat"><div class="k">Usage trend</div><div class="v">${p.tr ? (p.tr.dir > 0 ? '<span class="up">▲</span> Up' : p.tr.dir < 0 ? '<span class="dn">▼</span> Down' : 'Steady') : '—'}</div><div class="s">${p.tr ? `snaps ${pct(p.tr.sn[0])} → ${pct(p.tr.sn[1])}${p.tr.sh[0] != null ? ` · ${sn} ${pct(p.tr.sh[0])} → ${pct(p.tr.sh[1])}` : ''}` : 'needs 5+ full games'}</div></div>
     </div>
     ${p.po ? `<div class="panel"><h3>Fantasy playoffs, weeks 15 to 17</h3>
-      <p class="lede keep">${f1(p.po.e)} expected points a week · ${f1(p.po.i)} if he plays every week · plays ${pct(p.po.a)} of playoff weeks on average</p>
+      <p class="lede keep">${f1(p.po.i)} PPG if he plays · plays ${pct(p.po.a)} of playoff weeks on average · ${f1(p.po.e)} expected a week counting missed games</p>
       <div class="tw"><table><thead><tr><th>Week</th><th class="l">Opponent</th><th class="l">Matchup</th><th>Chance he plays</th><th>If he plays</th><th>Expected</th></tr></thead>
       <tbody>${p.po.w.map((w, i) => `<tr><td class="l"><b>Week ${PO_WEEKS[i]}</b></td>${w[0] ? `<td class="l">${w[1] ? 'vs' : '@'} ${esc(w[0])}</td><td class="l">${mTxt(w[2])}</td><td>${pct(w[3])}</td><td>${f1(p.po.h * w[2])}</td><td><b>${f1(p.po.h * w[2] * w[3])}</b></td>` : '<td class="l"><span class="chip">Bye</span></td><td></td><td></td><td></td><td><b>0.0</b></td>'}</tr>`).join('')}</tbody></table></div></div>` : ''}
     <div class="panel"><h3>Value over time</h3>${valueChart(p.id)}</div>
