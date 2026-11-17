@@ -45,8 +45,10 @@ SP = json.load(open(SPJ))
 def _base(r):
     return float(np.clip((r.ph_m if pd.notna(r.ph_m) else 0.9) * (r.g_m if pd.notna(r.g_m) else REST) / max(REST, 1), 0, 1))
 HIST_AVAIL = 0.861
-_ref = [_base(r) for r in V.itertuples() if pd.notna(r.ppg_m) and r.ppg_m >= 12 and r.sleeper_id not in io]
-CAL = HIST_AVAIL / float(np.mean(_ref)) if _ref else 1.0
+# reference: healthy starters only (median; backups with a 12+ PPG projection but little chance to play would
+# drag a mean down and inflate everyone else)
+_ref = [b for b in (_base(r) for r in V.itertuples() if pd.notna(r.ppg_m) and r.ppg_m >= 12 and r.sleeper_id not in io) if b >= 0.5]
+CAL = HIST_AVAIL / float(np.median(_ref)) if _ref else 1.0
 print("availability calibration", round(CAL, 3), "from", len(_ref), "healthy starters")
 
 out = {}
