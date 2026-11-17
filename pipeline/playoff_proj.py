@@ -39,13 +39,23 @@ for g in G.itertuples():
     sched[(g.away_team, g.week)] = (g.home_team, 0)
 SP = json.load(open(SPJ))
 
+# The season model's per-game availability runs low for late-season weeks: healthy starters (12+ PPG through
+# week 10, played week 10) played 86.1% of their team's weeks 15-17 games in 2016-2025, vs about 80% from
+# the model. Scale everyone so currently healthy starters average that rate.
+def _base(r):
+    return float(np.clip((r.ph_m if pd.notna(r.ph_m) else 0.9) * (r.g_m if pd.notna(r.g_m) else REST) / max(REST, 1), 0, 1))
+HIST_AVAIL = 0.861
+_ref = [_base(r) for r in V.itertuples() if pd.notna(r.ppg_m) and r.ppg_m >= 12 and r.sleeper_id not in io]
+CAL = HIST_AVAIL / float(np.mean(_ref)) if _ref else 1.0
+print("availability calibration", round(CAL, 3), "from", len(_ref), "healthy starters")
+
 out = {}
 for r in V.itertuples():
     team = TEAMFIX.get((SP.get(r.sleeper_id) or {}).get("team") or "", (SP.get(r.sleeper_id) or {}).get("team"))
     if not team or pd.isna(r.ppg_m):
         continue
     # per-game availability before any current injury (the model's), then the injury's return timing
-    base = float(np.clip((r.ph_m if pd.notna(r.ph_m) else 0.9) * (r.g_m if pd.notna(r.g_m) else REST) / max(REST, 1), 0, 1))
+    base = min(1.0, _base(r) * CAL)
     st = io.get(r.sleeper_id)
     wk, tot, fsum, n = [], 0.0, 0.0, 0
     for w in PO_WEEKS:
