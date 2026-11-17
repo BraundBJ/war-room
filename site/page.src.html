@@ -413,7 +413,7 @@ body.compact .tw td { font-size: 12.5px; }
       <h3>League trades</h3>
       <p>Placeholder trades are filtered out: round trips between the same two teams within three weeks, FAAB-only swaps, startup pick swaps, and the McCarthy for Carson Beck trade.</p>
       <h3>Fantasy playoffs</h3>
-      <p>Playoff PPG is what a player should average in weeks 15 to 17 when he plays: his healthy rest-of-season PPG times a matchup factor. His chance of playing each week (injury timeline and usual availability, calibrated so healthy starters play 86% of those games, as they did in 2016-2025) shows separately, and the hover adds expected points counting missed games. The matchup factor is how many points that defense allows his position this season, scaled by how much defense moved scoring in 2016-2025 games: most for RBs and QBs, least for TEs. A bye week counts as zero. Playoff lineup is a team's best lineup each of those weeks by expected points (so injuries count), averaged.</p>
+      <p>Playoff PPG is what a player should average in weeks 15 to 17 when he plays: his healthy rest-of-season PPG times a matchup factor. His chance of playing each week (injury timeline and usual availability, calibrated so healthy starters play 86% of those games, as they did in 2016-2025) shows separately, and the hover adds expected points counting missed games. The matchup factor is how many points that defense allows his position this season, scaled by how much defense moved scoring in 2016-2025 games: most for RBs and QBs, least for TEs. A bye week counts as zero. Playoff lineup plays each of those weeks 2,000 times: each player is available with his chance of playing that week, the best available lineup starts (with matchups), and empty slots get replacement level. It's averaged over the three weeks.</p>
       <h3>Contention window</h3>
       <p>Each team's projected starting lineup points a week now and in 2027, 2028 and 2029, with each player's chance of being healthy. Only current players count, so teams with many picks look weaker in later years than they will be.</p>
       <h3>Sell by</h3>
@@ -534,19 +534,27 @@ const baseCache = new Map();
 const baseOf = name => { if (!baseCache.has(name)) baseCache.set(name, seasonPts(L.teamBy.get(name).roster)); return baseCache.get(name); };
 // fantasy playoffs: best lineup each of weeks 15-17 by expected points (chance he plays x healthy PPG x matchup),
 // open slots filled at replacement level; average points a week
+// fantasy playoffs: each of weeks 15-17 played 2,000 times. Each player is available with his chance of playing
+// that week; you start the best lineup from whoever is available (PPG if he plays x matchup), and an empty
+// slot gets replacement level. Average points a week.
 function playoffLineup(t) {
   if (t.poL !== undefined) return t.poL;
-  const ps = t.roster.filter(id => !L.taxi.has(id)).map(id => P[byId.get(id)]).filter(p => p && p.po && p.po.h != null);
   if (!P.some(p => p.po)) return (t.poL = null);
-  let tot = 0;
+  const ps = t.roster.filter(id => !L.taxi.has(id)).map(id => P[byId.get(id)]).filter(p => p && p.po && p.po.h != null);
+  let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const NS = 2000; let tot = 0;
   PO_WEEKS.forEach((w, i) => {
-    const xs = ps.map(p => ({id: p.id, pos: p.p, v: p.po.h * p.po.w[i][2] * p.po.w[i][3]})).sort((a, b) => b.v - a.v), used = new Set();
-    for (const pos of POS4) for (let k = 0; k < L.def.fixed[pos]; k++) {
-      const c = xs.find(x => !used.has(x.id) && x.pos === pos); if (c) used.add(c.id); tot += Math.max(c ? c.v : 0, L.repl[pos] || 0); }
-    L.def.flex.forEach((g, gi) => { for (let k = 0; k < g.n; k++) {
-      const c = xs.find(x => !used.has(x.id) && g.pos.has(x.pos)); if (c) used.add(c.id); tot += Math.max(c ? c.v : 0, L.flexRepl[gi] || 0); } });
+    const xs = ps.map(p => ({pos: p.p, v: p.po.h * p.po.w[i][2], a: p.po.w[i][3]})).filter(x => x.a > 0).sort((a, b) => b.v - a.v);
+    const up = new Array(xs.length);
+    for (let s = 0; s < NS; s++) {
+      for (let k = 0; k < xs.length; k++) up[k] = rnd() < xs[k].a;
+      for (const pos of POS4) for (let n = 0; n < L.def.fixed[pos]; n++) {
+        const k = xs.findIndex((x, q) => up[q] && x.pos === pos); let v = 0; if (k >= 0) { v = xs[k].v; up[k] = false; } tot += Math.max(v, L.repl[pos] || 0); }
+      L.def.flex.forEach((g, gi) => { for (let n = 0; n < g.n; n++) {
+        const k = xs.findIndex((x, q) => up[q] && g.pos.has(x.pos)); let v = 0; if (k >= 0) { v = xs[k].v; up[k] = false; } tot += Math.max(v, L.flexRepl[gi] || 0); } });
+    }
   });
-  return (t.poL = tot / PO_WEEKS.length);
+  return (t.poL = tot / (NS * PO_WEEKS.length));
 }
 const poRank = t => { const v = playoffLineup(t); return v == null ? null : L.teams.filter(x => (playoffLineup(x) || 0) > v).length + 1; };
 // contention window: projected lineup points a week now and in 2027-2029 (current players only, no incoming rookies)
