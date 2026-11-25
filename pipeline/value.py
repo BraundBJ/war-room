@@ -73,7 +73,16 @@ def _inj(row):
     g_new = min(g, g * avail / max(by, 1e-6)) if by > 0 else 0.0
     return ph_new, g_new, ppg
 _adj = P.apply(_inj, axis=1, result_type="expand")
-P["phealthy0"], P["games0"], P["ppg0"] = _adj[0], _adj[1], _adj[2]
+# Nov 24 (Brady): the rest-of-2026 ("now") value ignores injuries unless the player is on IR or PUP.
+# Everyone else gets a 100% healthy chance and his full games-if-healthy, so a Questionable tag or a
+# short absence doesn't cut his value. IR/PUP players keep the return-timing adjustment above.
+# Later seasons keep the model's healthy chance. Weekly projections and playoff odds are unchanged.
+IR_LIKE = ("IR", "PUP")
+_on_ir = P.player_id.map(lambda g: (_io["status"].get(_g2s.get(g)) or {}).get("status") in IR_LIKE)
+P["phealthy0"] = np.where(_on_ir, _adj[0], 1.0)
+P["games0"] = np.where(_on_ir, _adj[1], P.games0)
+P["ppg0"] = np.where(_on_ir, _adj[2], P.ppg0)
+print("now value: injuries ignored except IR/PUP,", int(_on_ir.sum()), "players on IR/PUP keep the adjustment")
 r = P.pos.map(repl)
 Z90 = 1.2816  # normal 90th percentile
 for h in range(6):
